@@ -35,7 +35,15 @@ import {
   Check,
   ExternalLink,
   Flame,
+  MessageSquare,
+  Map,
+  LogIn,
+  LogOut,
+  Share2,
 } from 'lucide-react'
+import { useAuth } from './auth/AuthContext'
+import AuthModal from './auth/AuthModal'
+import Community from './community/Community'
 
 /* ============================================================================
  * DevPath AI — O Arquiteto de Carreira para Devs
@@ -283,7 +291,16 @@ const fakeHash = () => Math.random().toString(16).slice(2, 9)
  * COMPONENTE PRINCIPAL
  * ========================================================================*/
 export default function App() {
-  // Estado de navegação entre as 3 telas.
+  const { user, logout } = useAuth()
+
+  // Seção principal: ferramenta de roadmap x comunidade (estilo Reddit).
+  const [section, setSection] = useState('roadmap') // 'roadmap' | 'community'
+
+  // Controle do modal de login/cadastro e do roadmap pendente p/ compartilhar.
+  const [authOpen, setAuthOpen] = useState(false)
+  const [pendingShare, setPendingShare] = useState(null)
+
+  // Estado de navegação entre as 3 telas (dentro da seção "roadmap").
   const [view, setView] = useState('setup')
 
   // Dados do formulário do dev.
@@ -412,46 +429,76 @@ export default function App() {
     showToast('Rota recalculada — cronograma ajustado em +1 semana. Sem culpa. 🤝', 'info')
   }
 
+  // Compartilha o roadmap atual na comunidade (abre o criador de post).
+  const handleShareRoadmap = (snapshot) => {
+    setPendingShare(snapshot)
+    setSection('community')
+  }
+
+  const openAuth = () => setAuthOpen(true)
+
   return (
     <div className="min-h-screen text-slate-200 font-sans antialiased selection:bg-emerald-500/30">
       <Header
-        view={view}
+        section={section}
+        setSection={setSection}
+        showRoadmapControls={section === 'roadmap' && view !== 'setup'}
         github={github}
         onReset={handleReset}
         commitCount={commits.length}
+        user={user}
+        onLogin={openAuth}
+        onLogout={logout}
       />
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-8 sm:px-6">
-        {view === 'setup' && (
-          <SetupForm
-            form={form}
-            setForm={setForm}
-            github={github}
-            setGithub={setGithub}
-            onGenerate={handleGenerate}
+        {section === 'community' ? (
+          <Community
+            onRequireAuth={openAuth}
+            pendingShare={pendingShare}
+            onConsumeShare={() => setPendingShare(null)}
             showToast={showToast}
           />
-        )}
+        ) : (
+          <>
+            {view === 'setup' && (
+              <SetupForm
+                form={form}
+                setForm={setForm}
+                github={github}
+                setGithub={setGithub}
+                onGenerate={handleGenerate}
+                showToast={showToast}
+              />
+            )}
 
-        {view === 'loading' && <TerminalLoader form={form} />}
+            {view === 'loading' && <TerminalLoader form={form} />}
 
-        {view === 'dashboard' && (
-          <Dashboard
-            form={form}
-            roadmap={roadmap}
-            dependencies={dependencies}
-            source={source}
-            offsetWeeks={offsetWeeks}
-            onToggleTask={toggleTask}
-            onRecalculate={handleRecalculate}
-            github={github}
-            setGithub={setGithub}
-            commits={commits}
-            showToast={showToast}
-          />
+            {view === 'dashboard' && (
+              <Dashboard
+                form={form}
+                roadmap={roadmap}
+                dependencies={dependencies}
+                source={source}
+                offsetWeeks={offsetWeeks}
+                onToggleTask={toggleTask}
+                onRecalculate={handleRecalculate}
+                onShareRoadmap={handleShareRoadmap}
+                github={github}
+                setGithub={setGithub}
+                commits={commits}
+                showToast={showToast}
+              />
+            )}
+          </>
         )}
       </main>
 
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onSuccess={(u) => showToast(`Logado como ${u.username} ✓`, 'success')}
+      />
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   )
@@ -460,58 +507,87 @@ export default function App() {
 /* ==========================================================================
  * HEADER (barra superior fixa)
  * ========================================================================*/
-function Header({ view, github, onReset, commitCount }) {
+function Header({ section, setSection, showRoadmapControls, onReset, commitCount, user, onLogin, onLogout }) {
+  const tabs = [
+    { id: 'roadmap', label: 'Roadmap', icon: Map },
+    { id: 'community', label: 'Comunidade', icon: MessageSquare },
+  ]
   return (
     <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        <button
-          onClick={view !== 'setup' ? onReset : undefined}
-          className="group flex items-center gap-2.5 text-left"
-        >
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5">
           <span className="relative grid h-9 w-9 place-items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10">
             <Terminal className="h-5 w-5 text-emerald-400" />
             <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-blink rounded-full bg-emerald-400" />
           </span>
-          <span className="leading-tight">
+          <span className="hidden leading-tight sm:block">
             <span className="block font-mono text-sm font-bold tracking-tight text-slate-100">
               DevPath<span className="text-emerald-400">.ai</span>
             </span>
-            <span className="block font-mono text-[10px] text-slate-500">
-              {'>'} arquiteto de carreira
-            </span>
+            <span className="block font-mono text-[10px] text-slate-500">{'>'} arquiteto de carreira</span>
           </span>
-        </button>
+        </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
-          {commitCount > 0 && (
-            <span className="hidden items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 font-mono text-xs text-slate-400 sm:flex">
-              <GitCommit className="h-3.5 w-3.5 text-emerald-400" />
-              {commitCount} commit{commitCount > 1 ? 's' : ''}
-            </span>
-          )}
-
-          {github ? (
-            <span className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 py-1 pl-1 pr-3">
-              <img
-                src={github.avatar_url}
-                alt={github.login}
-                className="h-6 w-6 rounded-full ring-1 ring-emerald-500/40"
-              />
-              <span className="font-mono text-xs text-slate-300">{github.login}</span>
-            </span>
-          ) : (
-            <span className="hidden items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 font-mono text-xs text-slate-500 sm:flex">
-              <Github className="h-3.5 w-3.5" />
-              não conectado
-            </span>
-          )}
-
-          {view !== 'setup' && (
+        {/* Navegação entre seções */}
+        <nav className="flex gap-1 rounded-lg border border-slate-800 bg-slate-900/40 p-1">
+          {tabs.map((t) => (
             <button
-              onClick={onReset}
-              className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 font-mono text-xs text-slate-400 transition hover:border-slate-700 hover:text-slate-200"
+              key={t.id}
+              onClick={() => setSection(t.id)}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-xs font-semibold transition ${
+                section === t.id ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              novo projeto
+              <t.icon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        {/* Controles à direita */}
+        <div className="flex items-center gap-2">
+          {showRoadmapControls && (
+            <>
+              {commitCount > 0 && (
+                <span className="hidden items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 font-mono text-xs text-slate-400 lg:flex">
+                  <GitCommit className="h-3.5 w-3.5 text-emerald-400" />
+                  {commitCount}
+                </span>
+              )}
+              <button
+                onClick={onReset}
+                className="hidden rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 font-mono text-xs text-slate-400 transition hover:border-slate-700 hover:text-slate-200 sm:block"
+              >
+                novo projeto
+              </button>
+            </>
+          )}
+
+          {user ? (
+            <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 py-1 pl-1 pr-1.5">
+              <span
+                className="grid h-6 w-6 place-items-center rounded-full font-mono text-[11px] font-bold text-slate-950"
+                style={{ backgroundColor: user.avatarColor }}
+              >
+                {user.username.charAt(0).toUpperCase()}
+              </span>
+              <span className="hidden font-mono text-xs text-slate-300 sm:inline">{user.username}</span>
+              <button
+                onClick={onLogout}
+                title="Sair"
+                className="rounded p-1 text-slate-500 transition hover:text-red-400"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onLogin}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-mono text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              Entrar
             </button>
           )}
         </div>
@@ -934,6 +1010,7 @@ function Dashboard({
   offsetWeeks,
   onToggleTask,
   onRecalculate,
+  onShareRoadmap,
   github,
   setGithub,
   commits,
@@ -1000,14 +1077,39 @@ function Dashboard({
           </div>
         </div>
 
-        {/* Botão de destaque: Recalcular Rota */}
-        <button
-          onClick={onRecalculate}
-          className="group flex items-center justify-center gap-2 self-start rounded-xl border border-blue-500/40 bg-blue-500/10 px-4 py-2.5 font-mono text-sm font-semibold text-blue-200 shadow-lg shadow-blue-500/10 transition hover:bg-blue-500/20 hover:shadow-blue-500/30 sm:self-auto"
-        >
-          <RefreshCw className="h-4 w-4 transition-transform duration-500 group-hover:rotate-180" />
-          Recalcular Rota
-        </button>
+        {/* Ações: compartilhar na comunidade + recalcular rota */}
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <button
+            onClick={() =>
+              onShareRoadmap?.({
+                project: form.project,
+                level: form.level,
+                stack: form.stack,
+                source,
+                weeks: stats.calendarWeeks + offsetWeeks,
+                totalEffort: stats.totalEffort,
+                // Snapshot serializável (sem componentes de ícone).
+                sprints: roadmap.map((s) => ({
+                  title: s.title,
+                  goal: s.goal,
+                  effort: s.effort,
+                  tasks: s.tasks.map((t) => t.title),
+                })),
+              })
+            }
+            className="group flex items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2.5 font-mono text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+          >
+            <Share2 className="h-4 w-4" />
+            Compartilhar roadmap
+          </button>
+          <button
+            onClick={onRecalculate}
+            className="group flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-4 py-2.5 font-mono text-sm font-semibold text-blue-200 shadow-lg shadow-blue-500/10 transition hover:bg-blue-500/20 hover:shadow-blue-500/30"
+          >
+            <RefreshCw className="h-4 w-4 transition-transform duration-500 group-hover:rotate-180" />
+            Recalcular Rota
+          </button>
+        </div>
       </div>
 
       {/* Cards de resumo */}

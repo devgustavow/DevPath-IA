@@ -20,6 +20,9 @@ DevPath AI recebe um **projeto real** que você quer construir, faz a "engenhari
 | 🔁 | **Recalcular Rota** | Perdeu uma semana? Um clique empurra todo o cronograma em +1 semana, sem culpa. |
 | ✅ | **Commit de tarefas** | Marcar uma tarefa como concluída gera um "commit" no histórico — com hash, mensagem e horário. |
 | 🐙 | **Integração GitHub** | Conecta seu perfil **real** via API pública do GitHub (avatar, repos, seguidores) e "sincroniza" seus commits de progresso. |
+| 🔐 | **Login & Cadastro** | Autenticação **real**: senha com hash (bcrypt) + sessão via **JWT**. Persiste entre reinícios. |
+| 💬 | **Comunidade (estilo Reddit)** | Feed de posts com **upvote/downvote**, ordenação (Quentes/Novos/Top), **comentários** e categorias. |
+| 📢 | **Compartilhar roadmap** | Publique o roadmap gerado pela IA como um post e peça feedback da comunidade. |
 
 ### Dados mockados
 O roadmap de exemplo é baseado em um caso real: construir um **SaaS de Gestão de Tarefas com React e Node** — 8 sprints, do setup do monorepo ao deploy com CI/CD.
@@ -85,7 +88,7 @@ O backend é um **Express** mínimo em `server/`:
 
 - A chamada usa **structured output** (`responseSchema`) → o Gemini responde **JSON válido e previsível** (sprints + dependências), sem precisar "limpar" texto.
 - A `GEMINI_API_KEY` fica **só no servidor** — nunca é exposta ao navegador.
-- **Variáveis** (`.env`): `GEMINI_API_KEY`, `GEMINI_MODEL` (padrão `gemini-2.5-flash`), `PORT` (padrão `3001`).
+- **Variáveis** (`.env`): `GEMINI_API_KEY`, `GEMINI_MODEL` (padrão `gemini-2.5-flash`), `JWT_SECRET`, `PORT` (padrão `3001`).
   - 💡 Use um modelo com cota no free tier (ex.: `gemini-2.5-flash`). O `gemini-2.0-flash` e a série `1.5` podem retornar `429`/`404` em chaves novas.
 - **Sem chave / IA fora do ar?** O front detecta o erro e usa o **roadmap de exemplo** automaticamente, com um aviso. Nada quebra.
 
@@ -93,25 +96,56 @@ O backend é um **Express** mínimo em `server/`:
 
 ---
 
+## 🔐 Autenticação & 💬 Comunidade
+
+Login/cadastro **de verdade** e uma área estilo Reddit, com persistência em arquivo JSON (`server/data/db.json`, fora do versionamento).
+
+| Rota | Método | Auth | O que faz |
+|------|--------|------|-----------|
+| `/api/auth/register` | `POST` | — | Cria conta (hash bcrypt) e devolve um JWT. |
+| `/api/auth/login` | `POST` | — | Login por email/usuário + senha → JWT. |
+| `/api/auth/me` | `GET` | 🔒 | Dados do usuário logado. |
+| `/api/posts` | `GET` | — | Feed (`?sort=hot\|new\|top`). |
+| `/api/posts` | `POST` | 🔒 | Cria post (com roadmap opcional anexado). |
+| `/api/posts/:id` | `GET` | — | Post + comentários. |
+| `/api/posts/:id/comments` | `POST` | 🔒 | Comenta. |
+| `/api/posts/:id/vote` | `POST` | 🔒 | Upvote/downvote (`{ value: 1\|-1\|0 }`). |
+| `/api/comments/:id/vote` | `POST` | 🔒 | Vota em comentário. |
+
+- **Segurança**: senhas **nunca** são salvas em texto puro (bcrypt) e a sessão usa **JWT** (header `Authorization: Bearer`).
+- O token fica no `localStorage` e a sessão é reidratada (`/me`) ao recarregar a página.
+- Na primeira execução, a comunidade já vem com posts de boas-vindas (seed automático).
+
+> 💡 Persistência em arquivo JSON é proposital (zero setup, roda no Windows sem módulos nativos). Para produção, troque por Postgres/Prisma + um `JWT_SECRET` forte.
+
+---
+
 ## 🧩 Estrutura
 
 ```
 devpath-ai/
-├── index.html           # Tailwind CDN + fontes + config de tema/animações
-├── .env.example         # Modelo das variáveis de ambiente (copie p/ .env)
+├── index.html            # Tailwind CDN + fontes + config de tema/animações
+├── .env.example          # Modelo das variáveis de ambiente (copie p/ .env)
 ├── server/
-│   ├── index.js          # API Express (POST /api/roadmap, GET /api/health)
-│   └── gemini.js         # Integração com o Gemini (prompt + schema JSON)
+│   ├── index.js           # API Express (monta as rotas + health)
+│   ├── gemini.js          # Integração com o Gemini (prompt + schema JSON)
+│   ├── auth.js            # Cadastro/login (bcrypt + JWT) e middlewares
+│   ├── community.js       # Fórum: posts, comentários, votos
+│   ├── db.js              # Persistência em JSON + seed da comunidade
+│   └── data/              # db.json (gerado em runtime, fora do git)
 ├── src/
-│   ├── main.jsx          # Bootstrap do React
-│   └── App.jsx           # ⭐ App completa (formulário, loader e dashboard)
+│   ├── main.jsx           # Bootstrap do React (envolve com AuthProvider)
+│   ├── App.jsx            # ⭐ Shell + ferramenta de Roadmap (setup/loader/dashboard)
+│   ├── lib/api.js         # Cliente HTTP + token JWT
+│   ├── auth/              # AuthContext + AuthModal (login/cadastro)
+│   └── community/         # Community.jsx (feed, votos, comentários, share)
 ├── public/
-│   └── terminal.svg      # Favicon
-├── vite.config.js        # Proxy /api -> :3001
+│   └── terminal.svg       # Favicon
+├── vite.config.js         # Proxy /api -> :3001
 └── package.json
 ```
 
-A UI vive em **`src/App.jsx`** — Functional Components + Hooks (`useState`, `useEffect`, `useMemo`, `useRef`), comentado onde há lógica relevante.
+O front é modular: o **Roadmap** vive em `src/App.jsx`, a **comunidade** em `src/community/` e a **autenticação** em `src/auth/` — tudo com Functional Components + Hooks.
 
 ---
 

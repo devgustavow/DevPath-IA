@@ -8,6 +8,9 @@ node_modules
 .env.local
 .env.*.local
 
+# Dados de runtime (usuários, posts, senhas hasheadas) — não versionar
+server/data/
+
 # Build
 dist
 dist-ssr

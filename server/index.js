@@ -2,6 +2,9 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { generateRoadmap } from './gemini.js'
+import authRouter from './auth.js'
+import communityRouter from './community.js'
+import { seedIfEmpty } from './db.js'
 
 /* ============================================================================
  * Backend do DevPath AI — API mínima em Express.
@@ -14,6 +17,13 @@ app.use(cors())
 app.use(express.json())
 
 const PORT = process.env.PORT || 3001
+
+// Garante usuário/posts de boas-vindas na primeira execução.
+seedIfEmpty()
+
+// Rotas de autenticação (cadastro/login) e da comunidade (fórum).
+app.use('/api/auth', authRouter)
+app.use('/api', communityRouter)
 
 // Healthcheck (útil para o front saber se o backend/chave estão de pé).
 app.get('/api/health', (_req, res) => {
@@ -57,5 +67,6 @@ app.listen(PORT, () => {
   const keyOk = process.env.GEMINI_API_KEY
   console.log(`\n  🤖 DevPath AI — backend rodando em http://localhost:${PORT}`)
   console.log(`     Modelo:  ${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}`)
-  console.log(`     Gemini:  ${keyOk ? 'chave configurada ✓' : '⚠️  SEM CHAVE (defina GEMINI_API_KEY no .env)'}\n`)
+  console.log(`     Gemini:  ${keyOk ? 'chave configurada ✓' : '⚠️  SEM CHAVE (defina GEMINI_API_KEY no .env)'}`)
+  console.log(`     Auth:    ${process.env.JWT_SECRET ? 'JWT_SECRET definido ✓' : '⚠️  usando JWT_SECRET padrão (defina um no .env p/ produção)'}\n`)
 })
