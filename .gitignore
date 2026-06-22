@@ -3,6 +3,11 @@ node_modules
 .pnp
 .pnp.js
 
+# Variáveis de ambiente (NUNCA commitar a chave da API!)
+.env
+.env.local
+.env.*.local
+
 # Build
 dist
 dist-ssr

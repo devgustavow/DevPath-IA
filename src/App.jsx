@@ -210,6 +210,57 @@ const BOOT_SEQUENCE = [
   { text: 'Arquitetura pronta. Bem-vindo(a) ao fim do Tutorial Hell.', delay: 260, success: true },
 ]
 
+// Soma dos delays acima — usada como tempo mínimo de exibição do loader,
+// para a animação do terminal não ser cortada quando a IA responde rápido.
+const BOOT_DURATION = BOOT_SEQUENCE.reduce((acc, l) => acc + l.delay, 0) + 120
+
+/* Mapa de "iconKey" (string vinda da IA) -> componente de ícone do lucide-react. */
+const ICONS_BY_KEY = {
+  boxes: Boxes,
+  database: Database,
+  lock: Lock,
+  server: Server,
+  layout: LayoutDashboard,
+  code: Code2,
+  radio: Radio,
+  rocket: Rocket,
+  cpu: Cpu,
+  terminal: Terminal,
+  gitbranch: GitBranch,
+  activity: Activity,
+}
+
+/* Converte a resposta JSON do backend (Gemini) no formato interno da UI:
+ * adiciona ids estáveis, mapeia o ícone e marca toda tarefa como não concluída. */
+function adaptRoadmap(data) {
+  const sprints = (data?.sprints || []).map((s, i) => ({
+    id: `sprint-${i + 1}`,
+    icon: ICONS_BY_KEY[String(s.iconKey || '').toLowerCase()] || Boxes,
+    title: s.title || `Sprint ${i + 1}`,
+    goal: s.goal || '',
+    effort: Number(s.effort) || 12,
+    tasks: (s.tasks || []).map((t, j) => ({
+      id: `t${i + 1}-${j + 1}`,
+      title: typeof t === 'string' ? t : t?.title || '',
+      done: false,
+    })),
+  }))
+
+  const dependencies = (data?.dependencies || []).map((d, i) => ({
+    id: `dep-${i + 1}`,
+    severity: d.severity === 'warning' ? 'warning' : 'info',
+    title: d.title || '',
+    detail: d.detail || '',
+    blocks: d.blocks || '',
+  }))
+
+  return { sprints, dependencies }
+}
+
+/* Devolve uma cópia "zerada" do roadmap mock (para reset e fallback). */
+const freshRoadmap = () =>
+  INITIAL_ROADMAP.map((s) => ({ ...s, tasks: s.tasks.map((t) => ({ ...t, done: false })) }))
+
 /* ----------------------------------------------------------------------------
  * Helpers de data: cada sprint = 1 "janela" de 7 dias a partir de uma data base.
  * `offsetWeeks` permite deslocar todo o cronograma (botão "Recalcular Rota").
@@ -246,6 +297,10 @@ export default function App() {
   // Roadmap (mutável: marcamos tarefas como concluídas / "commits").
   const [roadmap, setRoadmap] = useState(INITIAL_ROADMAP)
 
+  // Mapa de dependências (vem da IA ou do mock) e origem do roadmap atual.
+  const [dependencies, setDependencies] = useState(DEPENDENCY_ALERTS)
+  const [source, setSource] = useState('mock') // 'ai' | 'mock'
+
   // Deslocamento do cronograma em semanas (alimentado por "Recalcular Rota").
   const [offsetWeeks, setOffsetWeeks] = useState(0)
 
@@ -266,14 +321,52 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
-  // Dispara a "geração" do roadmap.
-  const handleGenerate = () => {
+  // Dispara a geração do roadmap chamando o backend (Gemini).
+  // Mantém o loader por um tempo mínimo (animação) e cai no mock se a IA falhar.
+  const handleGenerate = async () => {
     setView('loading')
+    setOffsetWeeks(0)
+    setCommits([])
+
+    // Garante que a animação do terminal complete antes de navegar.
+    const minDelay = new Promise((resolve) => setTimeout(resolve, BOOT_DURATION))
+
+    try {
+      const res = await fetch('/api/roadmap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      if (!res.ok) {
+        const info = await res.json().catch(() => ({}))
+        throw new Error(info.error || `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      const adapted = adaptRoadmap(data)
+      if (!adapted.sprints.length) throw new Error('A IA retornou um roadmap vazio.')
+
+      await minDelay
+      setRoadmap(adapted.sprints)
+      setDependencies(adapted.dependencies.length ? adapted.dependencies : DEPENDENCY_ALERTS)
+      setSource('ai')
+      setView('dashboard')
+      showToast('Roadmap gerado pela IA (Gemini) ✓', 'success')
+    } catch (err) {
+      // Fallback gracioso: usa o roadmap de exemplo (mock) e avisa o usuário.
+      await minDelay
+      setRoadmap(freshRoadmap())
+      setDependencies(DEPENDENCY_ALERTS)
+      setSource('mock')
+      setView('dashboard')
+      showToast('IA indisponível — exibindo roadmap de exemplo. Rode o backend com GEMINI_API_KEY.', 'info')
+    }
   }
 
   // Reinicia o fluxo inteiro, voltando ao formulário.
   const handleReset = () => {
-    setRoadmap(INITIAL_ROADMAP.map((s) => ({ ...s, tasks: s.tasks.map((t) => ({ ...t, done: false })) })))
+    setRoadmap(freshRoadmap())
+    setDependencies(DEPENDENCY_ALERTS)
+    setSource('mock')
     setOffsetWeeks(0)
     setCommits([])
     setView('setup')
@@ -340,12 +433,14 @@ export default function App() {
           />
         )}
 
-        {view === 'loading' && <TerminalLoader onDone={() => setView('dashboard')} form={form} />}
+        {view === 'loading' && <TerminalLoader form={form} />}
 
         {view === 'dashboard' && (
           <Dashboard
             form={form}
             roadmap={roadmap}
+            dependencies={dependencies}
+            source={source}
             offsetWeeks={offsetWeeks}
             onToggleTask={toggleTask}
             onRecalculate={handleRecalculate}
@@ -748,13 +843,15 @@ function GithubConnect({ github, setGithub, showToast, compact = false }) {
 /* ==========================================================================
  * TELA 2 — TERMINAL DE CARREGAMENTO ("IA" trabalhando)
  * ========================================================================*/
-function TerminalLoader({ onDone, form }) {
+function TerminalLoader({ form }) {
   const [lines, setLines] = useState([])
   const timers = useRef([])
 
   useEffect(() => {
     let elapsed = 0
     // Revela cada linha do BOOT_SEQUENCE de forma sequencial.
+    // A navegação para o dashboard é controlada pelo handleGenerate (App),
+    // que só avança quando a resposta da IA chega — aqui é só visual.
     BOOT_SEQUENCE.forEach((line, i) => {
       elapsed += line.delay
       const t = setTimeout(() => {
@@ -763,12 +860,9 @@ function TerminalLoader({ onDone, form }) {
       timers.current.push(t)
     })
 
-    // Após a última linha, segura ~700ms e vai para o dashboard.
-    const done = setTimeout(() => onDone(), elapsed + 700)
-    timers.current.push(done)
-
-    return () => timers.current.forEach(clearTimeout)
-  }, [onDone])
+    const snapshot = timers.current
+    return () => snapshot.forEach(clearTimeout)
+  }, [])
 
   const progress = Math.round((lines.length / BOOT_SEQUENCE.length) * 100)
 
@@ -835,6 +929,8 @@ function TerminalLoader({ onDone, form }) {
 function Dashboard({
   form,
   roadmap,
+  dependencies,
+  source,
   offsetWeeks,
   onToggleTask,
   onRecalculate,
@@ -872,6 +968,24 @@ function Dashboard({
             {form.project}
           </h2>
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            {/* Badge: roadmap veio da IA (Gemini) ou é o exemplo mockado. */}
+            <span
+              className={`flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs ${
+                source === 'ai'
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                  : 'border-slate-700 bg-slate-900/60 text-slate-400'
+              }`}
+            >
+              {source === 'ai' ? (
+                <>
+                  <Sparkles className="h-3 w-3" /> gerado por IA · Gemini
+                </>
+              ) : (
+                <>
+                  <Cpu className="h-3 w-3" /> roadmap de exemplo
+                </>
+              )}
+            </span>
             <span className="rounded-md border border-slate-800 bg-slate-900/60 px-2 py-0.5 font-mono text-xs capitalize text-slate-400">
               {LEVELS.find((l) => l.value === form.level)?.label}
             </span>
@@ -973,7 +1087,7 @@ function Dashboard({
               subtitle="Pré-requisitos detectados pela IA"
             />
             <div className="space-y-3">
-              {DEPENDENCY_ALERTS.map((alert) => (
+              {dependencies.map((alert) => (
                 <DependencyAlert key={alert.id} alert={alert} />
               ))}
             </div>
