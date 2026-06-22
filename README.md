@@ -23,6 +23,10 @@ DevPath AI recebe um **projeto real** que você quer construir, faz a "engenhari
 | 🔐 | **Login & Cadastro** | Autenticação **real**: senha com hash (bcrypt) + sessão via **JWT**. Persiste entre reinícios. |
 | 💬 | **Comunidade (estilo Reddit)** | Feed de posts com **upvote/downvote**, ordenação (Quentes/Novos/Top), **comentários** e categorias. |
 | 📢 | **Compartilhar roadmap** | Publique o roadmap gerado pela IA como um post e peça feedback da comunidade. |
+| 👤 | **Dashboard do Perfil** | "Trabalhando em" (projeto/roadmap ativo), karma, e seus últimos posts/compartilhamentos. |
+| 🔥 | **Ofensiva & 🛡️ Defensiva** | Streak de dias consecutivos (ofensiva) + escudos que protegem quando você falha um dia (defensiva). |
+| 🔔 | **Notificações** | Avisos quando comentam ou votam no seu post, com badge de não lidas no header. |
+| ✅ | **Checklist (DoD)** | A IA também gera um *Definition of Done* por sprint — critérios objetivos de "pronto". |
 
 ### Dados mockados
 O roadmap de exemplo é baseado em um caso real: construir um **SaaS de Gestão de Tarefas com React e Node** — 8 sprints, do setup do monorepo ao deploy com CI/CD.
@@ -111,6 +115,19 @@ Login/cadastro **de verdade** e uma área estilo Reddit, com persistência em ar
 | `/api/posts/:id/comments` | `POST` | 🔒 | Comenta. |
 | `/api/posts/:id/vote` | `POST` | 🔒 | Upvote/downvote (`{ value: 1\|-1\|0 }`). |
 | `/api/comments/:id/vote` | `POST` | 🔒 | Vota em comentário. |
+| `/api/me/dashboard` | `GET` | 🔒 | Perfil: streak, projeto atual, stats e posts. |
+| `/api/me/activity` | `POST` | 🔒 | Registra atividade e atualiza a ofensiva/defensiva. |
+| `/api/me/project` | `PUT` | 🔒 | Salva o roadmap/projeto atual do usuário. |
+| `/api/notifications` | `GET` | 🔒 | Lista notificações (+ não lidas). |
+| `/api/notifications/read` | `POST` | 🔒 | Marca todas como lidas. |
+
+### 🔥 Progressão (Ofensiva & Defensiva)
+
+Inspirado no Duolingo — **consistência > intensidade**:
+
+- **Ofensiva** = dias consecutivos com atividade (concluir tarefa, gerar roadmap ou postar). Cada dia seguido soma +1.
+- **Defensiva** = "escudos" que **protegem a ofensiva** quando você falha um dia. A cada 7 dias de ofensiva você ganha +1 escudo (máx. 5).
+- Faltou e tinha escudo? A ofensiva é mantida. Faltou sem escudo? Ela zera — e você recomeça.
 
 - **Segurança**: senhas **nunca** são salvas em texto puro (bcrypt) e a sessão usa **JWT** (header `Authorization: Bearer`).
 - O token fica no `localStorage` e a sessão é reidratada (`/me`) ao recarregar a página.
@@ -130,7 +147,9 @@ devpath-ai/
 │   ├── index.js           # API Express (monta as rotas + health)
 │   ├── gemini.js          # Integração com o Gemini (prompt + schema JSON)
 │   ├── auth.js            # Cadastro/login (bcrypt + JWT) e middlewares
-│   ├── community.js       # Fórum: posts, comentários, votos
+│   ├── community.js       # Fórum: posts, comentários, votos, notificações
+│   ├── me.js              # Perfil: dashboard, streak, projeto, notificações
+│   ├── streak.js          # Lógica de ofensiva (streak) e defensiva (escudos)
 │   ├── db.js              # Persistência em JSON + seed da comunidade
 │   └── data/              # db.json (gerado em runtime, fora do git)
 ├── src/
@@ -138,7 +157,9 @@ devpath-ai/
 │   ├── App.jsx            # ⭐ Shell + ferramenta de Roadmap (setup/loader/dashboard)
 │   ├── lib/api.js         # Cliente HTTP + token JWT
 │   ├── auth/              # AuthContext + AuthModal (login/cadastro)
-│   └── community/         # Community.jsx (feed, votos, comentários, share)
+│   ├── community/         # Community.jsx (feed, votos, comentários, share)
+│   ├── profile/           # Profile.jsx (dashboard, ofensiva/defensiva)
+│   └── components/        # NotificationsBell.jsx (sino do header)
 ├── public/
 │   └── terminal.svg       # Favicon
 ├── vite.config.js         # Proxy /api -> :3001

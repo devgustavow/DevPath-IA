@@ -32,8 +32,13 @@ const responseSchema = {
             items: { type: SchemaType.STRING },
             description: 'Tarefas PRÁTICAS (construir/implementar), nunca "estudar".',
           },
+          checklist: {
+            type: SchemaType.ARRAY,
+            items: { type: SchemaType.STRING },
+            description: 'Definition of Done: 2 a 3 critérios objetivos de "pronto".',
+          },
         },
-        required: ['title', 'goal', 'effort', 'iconKey', 'tasks'],
+        required: ['title', 'goal', 'effort', 'iconKey', 'tasks', 'checklist'],
       },
     },
     dependencies: {
@@ -83,6 +88,9 @@ REGRAS OBRIGATÓRIAS:
 3. Cada sprint tem de 3 a 5 tarefas.
 4. "effort" = estimativa realista de horas para o sprint inteiro (entre 8 e 20).
 5. "goal" = uma frase curta com o resultado tangível ("Sair com X funcionando").
+5b. "checklist" = 2 a 3 critérios objetivos de "pronto" (Definition of Done) — como
+    saber, na prática, que o sprint está concluído (ex: "Endpoint responde 200 com JWT
+    válido", "Testes da auth passando no CI").
 6. "iconKey" deve ser EXATAMENTE uma destas: ${ICON_KEYS.join(', ')}. Escolha a mais
    representativa (database=banco, lock=auth, server=API, layout=UI/telas, code=frontend,
    radio=realtime, rocket=deploy, boxes=setup/fundação, gitbranch=versionamento).

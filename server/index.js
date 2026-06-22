@@ -4,6 +4,7 @@ import cors from 'cors'
 import { generateRoadmap } from './gemini.js'
 import authRouter from './auth.js'
 import communityRouter from './community.js'
+import meRouter from './me.js'
 import { seedIfEmpty } from './db.js'
 
 /* ============================================================================
@@ -21,9 +22,10 @@ const PORT = process.env.PORT || 3001
 // Garante usuário/posts de boas-vindas na primeira execução.
 seedIfEmpty()
 
-// Rotas de autenticação (cadastro/login) e da comunidade (fórum).
+// Rotas de autenticação, comunidade (fórum) e perfil (streak/notificações).
 app.use('/api/auth', authRouter)
 app.use('/api', communityRouter)
+app.use('/api', meRouter)
 
 // Healthcheck (útil para o front saber se o backend/chave estão de pé).
 app.get('/api/health', (_req, res) => {

@@ -36,4 +36,11 @@ export const api = {
   addComment: (id, body) => request(`/posts/${id}/comments`, { method: 'POST', body: { body } }),
   votePost: (id, value) => request(`/posts/${id}/vote`, { method: 'POST', body: { value } }),
   voteComment: (id, value) => request(`/comments/${id}/vote`, { method: 'POST', body: { value } }),
+
+  // Perfil / progressão
+  dashboard: () => request('/me/dashboard'),
+  activity: (type) => request('/me/activity', { method: 'POST', body: { type } }),
+  saveProject: (snapshot) => request('/me/project', { method: 'PUT', body: snapshot }),
+  notifications: () => request('/notifications'),
+  readNotifications: () => request('/notifications/read', { method: 'POST' }),
 }

@@ -40,10 +40,15 @@ import {
   LogIn,
   LogOut,
   Share2,
+  User,
+  ListChecks,
 } from 'lucide-react'
 import { useAuth } from './auth/AuthContext'
 import AuthModal from './auth/AuthModal'
 import Community from './community/Community'
+import Profile from './profile/Profile'
+import NotificationsBell from './components/NotificationsBell'
+import { api } from './lib/api'
 
 /* ============================================================================
  * DevPath AI — O Arquiteto de Carreira para Devs
@@ -78,6 +83,7 @@ const INITIAL_ROADMAP = [
       { id: 't1-3', title: 'Criar o front com Vite + React + Tailwind e renderizar o layout base', done: false },
       { id: 't1-4', title: 'Configurar ESLint, Prettier e Husky (commit lint)', done: false },
     ],
+    checklist: ['`npm run dev` sobe client e server sem erros', 'A rota `/health` responde 200'],
   },
   {
     id: 'sprint-2',
@@ -91,6 +97,7 @@ const INITIAL_ROADMAP = [
       { id: 't2-3', title: 'Construir a camada de seed com dados fake (faker)', done: false },
       { id: 't2-4', title: 'Implementar o repositório de Tasks (CRUD no banco)', done: false },
     ],
+    checklist: ['Migration aplicada e tabelas criadas no banco', 'A listagem de tarefas lê dados reais do banco'],
   },
   {
     id: 'sprint-3',
@@ -104,6 +111,7 @@ const INITIAL_ROADMAP = [
       { id: 't3-3', title: 'Criar middleware de autenticação e proteger as rotas privadas', done: false },
       { id: 't3-4', title: 'Escrever testes de integração da auth (Vitest + Supertest)', done: false },
     ],
+    checklist: ['Login devolve um JWT válido', 'Rota privada retorna 401 sem token e 200 com token', 'Testes da auth passando'],
   },
   {
     id: 'sprint-4',
@@ -117,6 +125,7 @@ const INITIAL_ROADMAP = [
       { id: 't4-3', title: 'Validar todo payload de entrada com Zod', done: false },
       { id: 't4-4', title: 'Documentar a API com Swagger / OpenAPI', done: false },
     ],
+    checklist: ['CRUD completo respondendo (200/201/204)', 'Payload inválido retorna 400 (Zod)', 'Swagger acessível em /docs'],
   },
   {
     id: 'sprint-5',
@@ -130,6 +139,7 @@ const INITIAL_ROADMAP = [
       { id: 't5-3', title: 'Montar o shell do app (sidebar, header, toggle de tema)', done: false },
       { id: 't5-4', title: 'Conectar o login real consumindo a API com React Query', done: false },
     ],
+    checklist: ['Login real autentica e redireciona para o app', 'Rota protegida bloqueia usuário deslogado'],
   },
   {
     id: 'sprint-6',
@@ -143,6 +153,7 @@ const INITIAL_ROADMAP = [
       { id: 't6-3', title: 'Criar o modal de criar/editar tarefa', done: false },
       { id: 't6-4', title: 'Sincronizar mutations com optimistic update (React Query)', done: false },
     ],
+    checklist: ['Arrastar um card muda o status e persiste', 'Criar/editar tarefa reflete na UI na hora'],
   },
   {
     id: 'sprint-7',
@@ -156,6 +167,7 @@ const INITIAL_ROADMAP = [
       { id: 't7-3', title: 'Atualizar o board em tempo real no frontend', done: false },
       { id: 't7-4', title: 'Construir o indicador de "usuários online" no workspace', done: false },
     ],
+    checklist: ['Mudança em uma aba aparece na outra sem refresh', 'Indicador de online atualiza ao entrar/sair'],
   },
   {
     id: 'sprint-8',
@@ -169,6 +181,7 @@ const INITIAL_ROADMAP = [
       { id: 't8-3', title: 'Deploy do backend (Railway/Render) e front (Vercel)', done: false },
       { id: 't8-4', title: 'Adicionar logging (Pino) e monitoramento de erros (Sentry)', done: false },
     ],
+    checklist: ['App acessível por uma URL pública', 'Pipeline roda testes e faz deploy no merge', 'Erros chegam no Sentry'],
   },
 ]
 
@@ -247,6 +260,7 @@ function adaptRoadmap(data) {
     title: s.title || `Sprint ${i + 1}`,
     goal: s.goal || '',
     effort: Number(s.effort) || 12,
+    checklist: Array.isArray(s.checklist) ? s.checklist : [],
     tasks: (s.tasks || []).map((t, j) => ({
       id: `t${i + 1}-${j + 1}`,
       title: typeof t === 'string' ? t : t?.title || '',
@@ -293,12 +307,15 @@ const fakeHash = () => Math.random().toString(16).slice(2, 9)
 export default function App() {
   const { user, logout } = useAuth()
 
-  // Seção principal: ferramenta de roadmap x comunidade (estilo Reddit).
-  const [section, setSection] = useState('roadmap') // 'roadmap' | 'community'
+  // Seção principal: roadmap x comunidade (Reddit) x perfil.
+  const [section, setSection] = useState('roadmap') // 'roadmap' | 'community' | 'profile'
 
   // Controle do modal de login/cadastro e do roadmap pendente p/ compartilhar.
   const [authOpen, setAuthOpen] = useState(false)
   const [pendingShare, setPendingShare] = useState(null)
+
+  // Post a abrir na comunidade ao navegar a partir do perfil.
+  const [communityPostId, setCommunityPostId] = useState(null)
 
   // Estado de navegação entre as 3 telas (dentro da seção "roadmap").
   const [view, setView] = useState('setup')
@@ -338,6 +355,43 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
+  // Monta um snapshot serializável do roadmap (sem componentes de ícone) p/ o backend.
+  const buildProjectSnapshot = (sprints, src) => {
+    const totalEffort = sprints.reduce((acc, s) => acc + s.effort, 0)
+    return {
+      project: form.project,
+      level: form.level,
+      stack: form.stack,
+      source: src,
+      weeks: Math.ceil(totalEffort / form.hours),
+      totalEffort,
+      sprints: sprints.map((s) => ({
+        title: s.title,
+        goal: s.goal,
+        effort: s.effort,
+        tasks: s.tasks.map((t) => t.title),
+      })),
+    }
+  }
+
+  // Registra uma atividade (alimenta a ofensiva) e celebra marcos/escudos.
+  const registerActivity = (type) => {
+    if (!user) return
+    api
+      .activity(type)
+      .then((r) => {
+        if (r.gainedFreeze) showToast(`🔥 Ofensiva de ${r.streak.count} dias! Você ganhou +1 escudo 🛡️`, 'success')
+      })
+      .catch(() => {})
+  }
+
+  // Persiste o projeto atual do usuário e conta como atividade.
+  const persistProject = (sprints, src) => {
+    if (!user) return
+    api.saveProject(buildProjectSnapshot(sprints, src)).catch(() => {})
+    registerActivity('roadmap')
+  }
+
   // Dispara a geração do roadmap chamando o backend (Gemini).
   // Mantém o loader por um tempo mínimo (animação) e cai no mock se a IA falhar.
   const handleGenerate = async () => {
@@ -368,14 +422,17 @@ export default function App() {
       setSource('ai')
       setView('dashboard')
       showToast('Roadmap gerado pela IA (Gemini) ✓', 'success')
+      persistProject(adapted.sprints, 'ai')
     } catch (err) {
       // Fallback gracioso: usa o roadmap de exemplo (mock) e avisa o usuário.
       await minDelay
-      setRoadmap(freshRoadmap())
+      const mock = freshRoadmap()
+      setRoadmap(mock)
       setDependencies(DEPENDENCY_ALERTS)
       setSource('mock')
       setView('dashboard')
       showToast('IA indisponível — exibindo roadmap de exemplo. Rode o backend com GEMINI_API_KEY.', 'info')
+      persistProject(mock, 'mock')
     }
   }
 
@@ -420,6 +477,8 @@ export default function App() {
           : 'Tarefa commitada! Conecte o GitHub para sincronizar.',
         'success',
       )
+      // Concluir tarefa alimenta a ofensiva de progressão.
+      registerActivity('commit')
     }
   }
 
@@ -435,6 +494,12 @@ export default function App() {
     setSection('community')
   }
 
+  // Abre um post específico da comunidade (a partir do perfil).
+  const handleOpenPost = (id) => {
+    setCommunityPostId(id)
+    setSection('community')
+  }
+
   const openAuth = () => setAuthOpen(true)
 
   return (
@@ -443,7 +508,6 @@ export default function App() {
         section={section}
         setSection={setSection}
         showRoadmapControls={section === 'roadmap' && view !== 'setup'}
-        github={github}
         onReset={handleReset}
         commitCount={commits.length}
         user={user}
@@ -457,6 +521,15 @@ export default function App() {
             onRequireAuth={openAuth}
             pendingShare={pendingShare}
             onConsumeShare={() => setPendingShare(null)}
+            openPostId={communityPostId}
+            onConsumeOpen={() => setCommunityPostId(null)}
+            showToast={showToast}
+          />
+        ) : section === 'profile' && user ? (
+          <Profile
+            user={user}
+            onGoRoadmap={() => setSection('roadmap')}
+            onOpenPost={handleOpenPost}
             showToast={showToast}
           />
         ) : (
@@ -511,6 +584,7 @@ function Header({ section, setSection, showRoadmapControls, onReset, commitCount
   const tabs = [
     { id: 'roadmap', label: 'Roadmap', icon: Map },
     { id: 'community', label: 'Comunidade', icon: MessageSquare },
+    ...(user ? [{ id: 'profile', label: 'Perfil', icon: User }] : []),
   ]
   return (
     <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
@@ -565,22 +639,28 @@ function Header({ section, setSection, showRoadmapControls, onReset, commitCount
           )}
 
           {user ? (
-            <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 py-1 pl-1 pr-1.5">
-              <span
-                className="grid h-6 w-6 place-items-center rounded-full font-mono text-[11px] font-bold text-slate-950"
-                style={{ backgroundColor: user.avatarColor }}
+            <>
+              <NotificationsBell />
+              <button
+                onClick={() => setSection('profile')}
+                className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 py-1 pl-1 pr-2 transition hover:border-slate-700"
               >
-                {user.username.charAt(0).toUpperCase()}
-              </span>
-              <span className="hidden font-mono text-xs text-slate-300 sm:inline">{user.username}</span>
+                <span
+                  className="grid h-6 w-6 place-items-center rounded-full font-mono text-[11px] font-bold text-slate-950"
+                  style={{ backgroundColor: user.avatarColor }}
+                >
+                  {user.username.charAt(0).toUpperCase()}
+                </span>
+                <span className="hidden font-mono text-xs text-slate-300 sm:inline">{user.username}</span>
+              </button>
               <button
                 onClick={onLogout}
                 title="Sair"
-                className="rounded p-1 text-slate-500 transition hover:text-red-400"
+                className="rounded-lg border border-slate-800 bg-slate-900/60 p-1.5 text-slate-500 transition hover:border-red-500/40 hover:text-red-400"
               >
                 <LogOut className="h-3.5 w-3.5" />
               </button>
-            </div>
+            </>
           ) : (
             <button
               onClick={onLogin}
@@ -1382,6 +1462,25 @@ function SprintCard({ sprint, index, window, onToggleTask, defaultOpen }) {
                 onToggle={() => onToggleTask(sprint.id, task.id)}
               />
             ))}
+
+            {/* Definition of Done — checklist gerada pela IA */}
+            {sprint.checklist?.length > 0 && (
+              <div className="mx-1 mt-1 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                <p className="mb-2 flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <ListChecks className="h-3.5 w-3.5 text-emerald-400" />
+                  Definition of Done
+                </p>
+                <ul className="space-y-1.5">
+                  {sprint.checklist.map((item, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
+                      <Check className="mt-0.5 h-3 w-3 flex-shrink-0 text-emerald-500" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="flex items-center justify-between px-3 py-2">
               <span className="flex items-center gap-1.5 font-mono text-[11px] text-slate-600">
                 <Zap className="h-3 w-3 text-amber-500" />

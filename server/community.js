@@ -1,6 +1,7 @@
 import express from 'express'
-import { readDB, writeDB, uid } from './db.js'
+import { readDB, writeDB, uid, addNotification } from './db.js'
 import { requireAuth, softUserId } from './auth.js'
+import { touchStreak } from './streak.js'
 
 /* ============================================================================
  * Fórum estilo Reddit: posts + comentários + votos (up/down) com ranking.
@@ -130,6 +131,11 @@ router.post('/posts', requireAuth, (req, res) => {
     createdAt: new Date().toISOString(),
   }
   db.posts.push(post)
+
+  // Publicar conta como atividade (alimenta a ofensiva).
+  const author = db.users.find((u) => u.id === req.userId)
+  if (author) touchStreak(author)
+
   writeDB(db)
   res.status(201).json({ post: enrichPost(db, post, req.userId, { withComments: true }) })
 })
@@ -151,6 +157,23 @@ router.post('/posts/:id/comments', requireAuth, (req, res) => {
     createdAt: new Date().toISOString(),
   }
   db.comments.push(comment)
+
+  // Comentar conta como atividade.
+  const commenter = db.users.find((u) => u.id === req.userId)
+  if (commenter) touchStreak(commenter)
+
+  // Notifica o autor do post (se não for ele mesmo comentando).
+  if (post.authorId !== req.userId) {
+    addNotification(db, {
+      userId: post.authorId,
+      type: 'comment',
+      actor: commenter?.username || 'alguém',
+      postId: post.id,
+      postTitle: post.title,
+      text: `${commenter?.username || 'alguém'} comentou no seu post`,
+    })
+  }
+
   writeDB(db)
   res.status(201).json({ post: enrichPost(db, post, req.userId, { withComments: true }) })
 })
@@ -160,7 +183,22 @@ router.post('/posts/:id/vote', requireAuth, (req, res) => {
   const db = readDB()
   const post = db.posts.find((p) => p.id === req.params.id)
   if (!post) return res.status(404).json({ error: 'Post não encontrado.' })
-  setVote(db, 'post', post.id, req.userId, Number(req.body?.value) || 0)
+  const value = Number(req.body?.value) || 0
+  setVote(db, 'post', post.id, req.userId, value)
+
+  // Notifica o autor quando recebe um upvote (e não é ele mesmo).
+  if (value === 1 && post.authorId !== req.userId) {
+    const voter = db.users.find((u) => u.id === req.userId)
+    addNotification(db, {
+      userId: post.authorId,
+      type: 'vote',
+      actor: voter?.username || 'alguém',
+      postId: post.id,
+      postTitle: post.title,
+      text: `${voter?.username || 'alguém'} votou no seu post`,
+    })
+  }
+
   writeDB(db)
   res.json({ score: scoreOf(db, 'post', post.id), userVote: myVote(db, 'post', post.id, req.userId) })
 })

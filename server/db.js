@@ -13,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = path.join(__dirname, 'data')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 
-const EMPTY_DB = { users: [], posts: [], comments: [], votes: [] }
+const EMPTY_DB = { users: [], posts: [], comments: [], votes: [], notifications: [] }
 
 function ensureFile() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -37,6 +37,22 @@ export function writeDB(db) {
 // Id curto e único o suficiente para um MVP.
 export function uid(prefix = 'id') {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
+
+// Cria uma notificação para um usuário (ex: comentaram/votaram no seu post).
+export function addNotification(db, { userId, type, actor, postId, postTitle, text }) {
+  if (!db.notifications) db.notifications = []
+  db.notifications.push({
+    id: uid('notif'),
+    userId,
+    type, // 'comment' | 'vote' | 'streak'
+    actor: actor || null,
+    postId: postId || null,
+    postTitle: postTitle || null,
+    text: text || '',
+    read: false,
+    createdAt: new Date().toISOString(),
+  })
 }
 
 // Cor de avatar determinística a partir de uma string (username).

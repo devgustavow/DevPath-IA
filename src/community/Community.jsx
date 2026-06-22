@@ -53,7 +53,7 @@ function timeAgo(iso) {
   return `há ${d}d`
 }
 
-export default function Community({ onRequireAuth, pendingShare, onConsumeShare, showToast }) {
+export default function Community({ onRequireAuth, pendingShare, onConsumeShare, openPostId, onConsumeOpen, showToast }) {
   const { user } = useAuth()
   const [view, setView] = useState('list') // 'list' | 'detail'
   const [posts, setPosts] = useState([])
@@ -86,6 +86,15 @@ export default function Community({ onRequireAuth, pendingShare, onConsumeShare,
       setCreateOpen(true)
     }
   }, [pendingShare])
+
+  // Abre um post específico ao navegar a partir do perfil.
+  useEffect(() => {
+    if (openPostId) {
+      openDetail(openPostId)
+      onConsumeOpen?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPostId])
 
   // Voto otimista (atualiza a UI antes da resposta; reverte em erro).
   const handleVotePost = async (post, value) => {
