@@ -20,7 +20,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     provider: 'gemini',
-    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     hasKey: Boolean(process.env.GEMINI_API_KEY),
   })
 })
@@ -56,6 +56,6 @@ app.post('/api/roadmap', async (req, res) => {
 app.listen(PORT, () => {
   const keyOk = process.env.GEMINI_API_KEY
   console.log(`\n  🤖 DevPath AI — backend rodando em http://localhost:${PORT}`)
-  console.log(`     Modelo:  ${process.env.GEMINI_MODEL || 'gemini-2.0-flash'}`)
+  console.log(`     Modelo:  ${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}`)
   console.log(`     Gemini:  ${keyOk ? 'chave configurada ✓' : '⚠️  SEM CHAVE (defina GEMINI_API_KEY no .env)'}\n`)
 })

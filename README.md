@@ -85,7 +85,8 @@ O backend é um **Express** mínimo em `server/`:
 
 - A chamada usa **structured output** (`responseSchema`) → o Gemini responde **JSON válido e previsível** (sprints + dependências), sem precisar "limpar" texto.
 - A `GEMINI_API_KEY` fica **só no servidor** — nunca é exposta ao navegador.
-- **Variáveis** (`.env`): `GEMINI_API_KEY`, `GEMINI_MODEL` (padrão `gemini-2.0-flash`), `PORT` (padrão `3001`).
+- **Variáveis** (`.env`): `GEMINI_API_KEY`, `GEMINI_MODEL` (padrão `gemini-2.5-flash`), `PORT` (padrão `3001`).
+  - 💡 Use um modelo com cota no free tier (ex.: `gemini-2.5-flash`). O `gemini-2.0-flash` e a série `1.5` podem retornar `429`/`404` em chaves novas.
 - **Sem chave / IA fora do ar?** O front detecta o erro e usa o **roadmap de exemplo** automaticamente, com um aviso. Nada quebra.
 
 > ⚠️ **Nunca** commite seu `.env` — ele já está no `.gitignore`. Use o `.env.example` como modelo.
