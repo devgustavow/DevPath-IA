@@ -27,6 +27,7 @@ DevPath AI recebe um **projeto real** que você quer construir, faz a "engenhari
 | 🔥 | **Ofensiva & 🛡️ Defensiva** | Streak de dias consecutivos (ofensiva) + escudos que protegem quando você falha um dia (defensiva). |
 | 🔔 | **Notificações** | Avisos quando comentam ou votam no seu post, com badge de não lidas no header. |
 | ✅ | **Checklist (DoD)** | A IA também gera um *Definition of Done* por sprint — critérios objetivos de "pronto". |
+| 📁 | **Meus roadmaps** | Aba na home para **ver, continuar (com progresso salvo) e excluir** todos os seus roadmaps. |
 
 ### Dados mockados
 O roadmap de exemplo é baseado em um caso real: construir um **SaaS de Gestão de Tarefas com React e Node** — 8 sprints, do setup do monorepo ao deploy com CI/CD.
@@ -117,7 +118,11 @@ Login/cadastro **de verdade** e uma área estilo Reddit, com persistência em ar
 | `/api/comments/:id/vote` | `POST` | 🔒 | Vota em comentário. |
 | `/api/me/dashboard` | `GET` | 🔒 | Perfil: streak, projeto atual, stats e posts. |
 | `/api/me/activity` | `POST` | 🔒 | Registra atividade e atualiza a ofensiva/defensiva. |
-| `/api/me/project` | `PUT` | 🔒 | Salva o roadmap/projeto atual do usuário. |
+| `/api/me/roadmaps` | `GET` | 🔒 | Lista os roadmaps salvos do usuário (com progresso). |
+| `/api/me/roadmaps` | `POST` | 🔒 | Salva um novo roadmap gerado. |
+| `/api/me/roadmaps/:id` | `GET` | 🔒 | Abre um roadmap completo (para continuar). |
+| `/api/me/roadmaps/:id` | `PUT` | 🔒 | Atualiza o progresso (tarefas concluídas). |
+| `/api/me/roadmaps/:id` | `DELETE` | 🔒 | Exclui um roadmap. |
 | `/api/notifications` | `GET` | 🔒 | Lista notificações (+ não lidas). |
 | `/api/notifications/read` | `POST` | 🔒 | Marca todas como lidas. |
 
@@ -159,6 +164,7 @@ devpath-ai/
 │   ├── auth/              # AuthContext + AuthModal (login/cadastro)
 │   ├── community/         # Community.jsx (feed, votos, comentários, share)
 │   ├── profile/           # Profile.jsx (dashboard, ofensiva/defensiva)
+│   ├── roadmaps/          # MyRoadmaps.jsx (lista/continua/exclui roadmaps)
 │   └── components/        # NotificationsBell.jsx (sino do header)
 ├── public/
 │   └── terminal.svg       # Favicon

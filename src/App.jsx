@@ -42,11 +42,13 @@ import {
   Share2,
   User,
   ListChecks,
+  FolderGit2,
 } from 'lucide-react'
 import { useAuth } from './auth/AuthContext'
 import AuthModal from './auth/AuthModal'
 import Community from './community/Community'
 import Profile from './profile/Profile'
+import MyRoadmaps from './roadmaps/MyRoadmaps'
 import NotificationsBell from './components/NotificationsBell'
 import { api } from './lib/api'
 
@@ -74,6 +76,7 @@ const INITIAL_ROADMAP = [
   {
     id: 'sprint-1',
     icon: Boxes,
+    iconKey: 'boxes',
     title: 'Fundação & Setup do Ambiente',
     goal: 'Sair com um monorepo rodando "hello world" em client + server.',
     effort: 10,
@@ -88,6 +91,7 @@ const INITIAL_ROADMAP = [
   {
     id: 'sprint-2',
     icon: Database,
+    iconKey: 'database',
     title: 'Modelagem & Banco de Dados',
     goal: 'Persistir e ler tarefas reais do PostgreSQL.',
     effort: 14,
@@ -102,6 +106,7 @@ const INITIAL_ROADMAP = [
   {
     id: 'sprint-3',
     icon: Lock,
+    iconKey: 'lock',
     title: 'Autenticação (Backend)',
     goal: 'Registrar, logar e proteger rotas com JWT de verdade.',
     effort: 16,
@@ -116,6 +121,7 @@ const INITIAL_ROADMAP = [
   {
     id: 'sprint-4',
     icon: Server,
+    iconKey: 'server',
     title: 'API de Tarefas (Backend)',
     goal: 'Expor um CRUD de tarefas robusto, validado e documentado.',
     effort: 14,
@@ -130,6 +136,7 @@ const INITIAL_ROADMAP = [
   {
     id: 'sprint-5',
     icon: LayoutDashboard,
+    iconKey: 'layout',
     title: 'Frontend — Auth & Layout',
     goal: 'Logar de verdade e navegar pelo app já autenticado.',
     effort: 16,
@@ -144,6 +151,7 @@ const INITIAL_ROADMAP = [
   {
     id: 'sprint-6',
     icon: Code2,
+    iconKey: 'code',
     title: 'Frontend — Board de Tarefas',
     goal: 'Entregar o coração do produto: um Kanban funcional.',
     effort: 18,
@@ -158,6 +166,7 @@ const INITIAL_ROADMAP = [
   {
     id: 'sprint-7',
     icon: Radio,
+    iconKey: 'radio',
     title: 'Real-time & Colaboração',
     goal: 'Ver o board atualizar ao vivo entre vários usuários.',
     effort: 14,
@@ -172,6 +181,7 @@ const INITIAL_ROADMAP = [
   {
     id: 'sprint-8',
     icon: Rocket,
+    iconKey: 'rocket',
     title: 'Deploy & Observabilidade',
     goal: 'Colocar o SaaS no ar com CI/CD e monitoramento.',
     effort: 12,
@@ -256,6 +266,7 @@ const ICONS_BY_KEY = {
 function adaptRoadmap(data) {
   const sprints = (data?.sprints || []).map((s, i) => ({
     id: `sprint-${i + 1}`,
+    iconKey: String(s.iconKey || 'boxes').toLowerCase(),
     icon: ICONS_BY_KEY[String(s.iconKey || '').toLowerCase()] || Boxes,
     title: s.title || `Sprint ${i + 1}`,
     goal: s.goal || '',
@@ -282,6 +293,34 @@ function adaptRoadmap(data) {
 /* Devolve uma cópia "zerada" do roadmap mock (para reset e fallback). */
 const freshRoadmap = () =>
   INITIAL_ROADMAP.map((s) => ({ ...s, tasks: s.tasks.map((t) => ({ ...t, done: false })) }))
+
+/* Serializa o roadmap interno (com componentes de ícone) para salvar no backend. */
+const serializeSprints = (sprints) =>
+  sprints.map((s) => ({
+    title: s.title,
+    goal: s.goal,
+    effort: s.effort,
+    iconKey: s.iconKey || 'boxes',
+    checklist: s.checklist || [],
+    tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, done: !!t.done })),
+  }))
+
+/* Reconstrói o roadmap interno a partir de um salvo (mapeia iconKey -> ícone). */
+const reconstructSprints = (saved) =>
+  (saved || []).map((s, i) => ({
+    id: `sprint-${i + 1}`,
+    iconKey: s.iconKey || 'boxes',
+    icon: ICONS_BY_KEY[s.iconKey] || Boxes,
+    title: s.title || `Sprint ${i + 1}`,
+    goal: s.goal || '',
+    effort: Number(s.effort) || 12,
+    checklist: Array.isArray(s.checklist) ? s.checklist : [],
+    tasks: (s.tasks || []).map((t, j) => ({
+      id: t.id || `t${i + 1}-${j + 1}`,
+      title: t.title || '',
+      done: !!t.done,
+    })),
+  }))
 
 /* ----------------------------------------------------------------------------
  * Helpers de data: cada sprint = 1 "janela" de 7 dias a partir de uma data base.
@@ -320,6 +359,13 @@ export default function App() {
   // Estado de navegação entre as 3 telas (dentro da seção "roadmap").
   const [view, setView] = useState('setup')
 
+  // Aba da home (setup): criar novo x meus roadmaps salvos.
+  const [setupTab, setSetupTab] = useState('new') // 'new' | 'mine'
+
+  // Id do roadmap salvo atualmente ativo (p/ persistir progresso) + key de reload da lista.
+  const [activeRoadmapId, setActiveRoadmapId] = useState(null)
+  const [roadmapsReloadKey, setRoadmapsReloadKey] = useState(0)
+
   // Dados do formulário do dev.
   const [form, setForm] = useState({
     project: 'SaaS de Gestão de Tarefas',
@@ -355,22 +401,19 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
-  // Monta um snapshot serializável do roadmap (sem componentes de ícone) p/ o backend.
-  const buildProjectSnapshot = (sprints, src) => {
+  // Monta o payload completo do roadmap (com progresso) para salvar no backend.
+  const buildRoadmapPayload = (sprints, deps, src) => {
     const totalEffort = sprints.reduce((acc, s) => acc + s.effort, 0)
     return {
       project: form.project,
       level: form.level,
       stack: form.stack,
+      hours: form.hours,
       source: src,
       weeks: Math.ceil(totalEffort / form.hours),
       totalEffort,
-      sprints: sprints.map((s) => ({
-        title: s.title,
-        goal: s.goal,
-        effort: s.effort,
-        tasks: s.tasks.map((t) => t.title),
-      })),
+      dependencies: deps,
+      sprints: serializeSprints(sprints),
     }
   }
 
@@ -385,11 +428,46 @@ export default function App() {
       .catch(() => {})
   }
 
-  // Persiste o projeto atual do usuário e conta como atividade.
-  const persistProject = (sprints, src) => {
+  // Salva um novo roadmap na coleção do usuário e marca como ativo.
+  const persistRoadmap = (sprints, deps, src) => {
     if (!user) return
-    api.saveProject(buildProjectSnapshot(sprints, src)).catch(() => {})
-    registerActivity('roadmap')
+    api
+      .createRoadmap(buildRoadmapPayload(sprints, deps, src))
+      .then((r) => {
+        setActiveRoadmapId(r.roadmap.id)
+        setRoadmapsReloadKey((k) => k + 1)
+      })
+      .catch(() => {})
+  }
+
+  // Persiste o progresso (tarefas concluídas) do roadmap ativo.
+  const persistProgress = (sprints) => {
+    if (!user || !activeRoadmapId) return
+    api.updateRoadmap(activeRoadmapId, { sprints: serializeSprints(sprints) }).catch(() => {})
+  }
+
+  // Abre/continua um roadmap salvo (a partir de "Meus roadmaps" ou do perfil).
+  const handleLoadRoadmap = async (id) => {
+    try {
+      const { roadmap } = await api.getRoadmap(id)
+      setForm((f) => ({
+        ...f,
+        project: roadmap.project,
+        level: roadmap.level || f.level,
+        hours: roadmap.hours || f.hours,
+        stack: roadmap.stack?.length ? roadmap.stack : f.stack,
+      }))
+      setRoadmap(reconstructSprints(roadmap.sprints))
+      setDependencies(roadmap.dependencies?.length ? roadmap.dependencies : DEPENDENCY_ALERTS)
+      setSource(roadmap.source === 'ai' ? 'ai' : 'mock')
+      setActiveRoadmapId(roadmap.id)
+      setOffsetWeeks(0)
+      setCommits([])
+      setSection('roadmap')
+      setView('dashboard')
+    } catch (err) {
+      showToast(err.message, 'info')
+    }
   }
 
   // Dispara a geração do roadmap chamando o backend (Gemini).
@@ -398,6 +476,7 @@ export default function App() {
     setView('loading')
     setOffsetWeeks(0)
     setCommits([])
+    setActiveRoadmapId(null)
 
     // Garante que a animação do terminal complete antes de navegar.
     const minDelay = new Promise((resolve) => setTimeout(resolve, BOOT_DURATION))
@@ -422,7 +501,7 @@ export default function App() {
       setSource('ai')
       setView('dashboard')
       showToast('Roadmap gerado pela IA (Gemini) ✓', 'success')
-      persistProject(adapted.sprints, 'ai')
+      persistRoadmap(adapted.sprints, adapted.dependencies.length ? adapted.dependencies : DEPENDENCY_ALERTS, 'ai')
     } catch (err) {
       // Fallback gracioso: usa o roadmap de exemplo (mock) e avisa o usuário.
       await minDelay
@@ -432,7 +511,7 @@ export default function App() {
       setSource('mock')
       setView('dashboard')
       showToast('IA indisponível — exibindo roadmap de exemplo. Rode o backend com GEMINI_API_KEY.', 'info')
-      persistProject(mock, 'mock')
+      persistRoadmap(mock, DEPENDENCY_ALERTS, 'mock')
     }
   }
 
@@ -443,26 +522,29 @@ export default function App() {
     setSource('mock')
     setOffsetWeeks(0)
     setCommits([])
+    setActiveRoadmapId(null)
+    setSetupTab('new')
+    setSection('roadmap')
     setView('setup')
   }
 
   /* Marca/desmarca uma tarefa. Marcar = "fazer um commit". */
   const toggleTask = (sprintId, taskId) => {
     let committedTask = null
-    setRoadmap((prev) =>
-      prev.map((sprint) => {
-        if (sprint.id !== sprintId) return sprint
-        return {
-          ...sprint,
-          tasks: sprint.tasks.map((task) => {
-            if (task.id !== taskId) return task
-            const nowDone = !task.done
-            if (nowDone) committedTask = task
-            return { ...task, done: nowDone }
-          }),
-        }
-      }),
-    )
+    const newRoadmap = roadmap.map((sprint) => {
+      if (sprint.id !== sprintId) return sprint
+      return {
+        ...sprint,
+        tasks: sprint.tasks.map((task) => {
+          if (task.id !== taskId) return task
+          const nowDone = !task.done
+          if (nowDone) committedTask = task
+          return { ...task, done: nowDone }
+        }),
+      }
+    })
+    setRoadmap(newRoadmap)
+    persistProgress(newRoadmap) // salva o progresso no roadmap ativo (se logado)
 
     // Ao concluir (não ao desfazer), registra um "commit" no log.
     if (committedTask) {
@@ -528,21 +610,57 @@ export default function App() {
         ) : section === 'profile' && user ? (
           <Profile
             user={user}
-            onGoRoadmap={() => setSection('roadmap')}
+            onGoRoadmap={() => {
+              setSection('roadmap')
+              setView('setup')
+              setSetupTab('new')
+            }}
+            onOpenRoadmap={handleLoadRoadmap}
             onOpenPost={handleOpenPost}
             showToast={showToast}
           />
         ) : (
           <>
             {view === 'setup' && (
-              <SetupForm
-                form={form}
-                setForm={setForm}
-                github={github}
-                setGithub={setGithub}
-                onGenerate={handleGenerate}
-                showToast={showToast}
-              />
+              <div className="animate-fade-in">
+                {/* Abas da home: criar novo x meus roadmaps salvos */}
+                <div className="mx-auto mb-8 flex max-w-md gap-1 rounded-xl border border-slate-800 bg-slate-900/40 p-1">
+                  {[
+                    { id: 'new', label: 'Criar novo', icon: Wand2 },
+                    { id: 'mine', label: 'Meus roadmaps', icon: FolderGit2 },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setSetupTab(t.id)}
+                      className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 font-mono text-xs font-semibold transition ${
+                        setupTab === t.id ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <t.icon className="h-3.5 w-3.5" />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {setupTab === 'new' ? (
+                  <SetupForm
+                    form={form}
+                    setForm={setForm}
+                    github={github}
+                    setGithub={setGithub}
+                    onGenerate={handleGenerate}
+                    showToast={showToast}
+                  />
+                ) : (
+                  <MyRoadmaps
+                    user={user}
+                    onSelect={handleLoadRoadmap}
+                    onRequireAuth={openAuth}
+                    showToast={showToast}
+                    reloadKey={roadmapsReloadKey}
+                  />
+                )}
+              </div>
             )}
 
             {view === 'loading' && <TerminalLoader form={form} />}

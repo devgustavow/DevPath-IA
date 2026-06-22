@@ -51,7 +51,7 @@ function timeAgo(iso) {
   return `há ${Math.floor(h / 24)}d`
 }
 
-export default function Profile({ user, onGoRoadmap, onOpenPost, showToast }) {
+export default function Profile({ user, onGoRoadmap, onOpenRoadmap, onOpenPost, showToast }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -203,17 +203,27 @@ export default function Profile({ user, onGoRoadmap, onOpenPost, showToast }) {
                     <Clock className="h-3 w-3 text-emerald-400" /> {currentProject.totalEffort}h
                   </span>
                 )}
-                {currentProject.sprints && (
+                {currentProject.sprintsCount != null && (
                   <span className="flex items-center gap-1">
-                    <Layers className="h-3 w-3 text-emerald-400" /> {currentProject.sprints.length} sprints
+                    <Layers className="h-3 w-3 text-emerald-400" /> {currentProject.sprintsCount} sprints
                   </span>
                 )}
               </div>
+              {/* Progresso */}
+              <div className="mt-3 flex items-center gap-2">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all"
+                    style={{ width: `${currentProject.progress || 0}%` }}
+                  />
+                </div>
+                <span className="font-mono text-[11px] text-slate-400">{currentProject.progress || 0}%</span>
+              </div>
               <button
-                onClick={onGoRoadmap}
+                onClick={() => onOpenRoadmap(currentProject.id)}
                 className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 py-2 font-mono text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
               >
-                abrir roadmap <ArrowUpRight className="h-3.5 w-3.5" />
+                continuar roadmap <ArrowUpRight className="h-3.5 w-3.5" />
               </button>
             </div>
           ) : (

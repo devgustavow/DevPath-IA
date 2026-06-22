@@ -40,7 +40,13 @@ export const api = {
   // Perfil / progressão
   dashboard: () => request('/me/dashboard'),
   activity: (type) => request('/me/activity', { method: 'POST', body: { type } }),
-  saveProject: (snapshot) => request('/me/project', { method: 'PUT', body: snapshot }),
   notifications: () => request('/notifications'),
   readNotifications: () => request('/notifications/read', { method: 'POST' }),
+
+  // Roadmaps do usuário
+  listRoadmaps: () => request('/me/roadmaps'),
+  getRoadmap: (id) => request(`/me/roadmaps/${id}`),
+  createRoadmap: (b) => request('/me/roadmaps', { method: 'POST', body: b }),
+  updateRoadmap: (id, b) => request(`/me/roadmaps/${id}`, { method: 'PUT', body: b }),
+  deleteRoadmap: (id) => request(`/me/roadmaps/${id}`, { method: 'DELETE' }),
 }

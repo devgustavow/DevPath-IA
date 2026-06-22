@@ -13,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = path.join(__dirname, 'data')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 
-const EMPTY_DB = { users: [], posts: [], comments: [], votes: [], notifications: [] }
+const EMPTY_DB = { users: [], posts: [], comments: [], votes: [], notifications: [], roadmaps: [] }
 
 function ensureFile() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
