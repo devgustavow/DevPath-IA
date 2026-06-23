@@ -5,6 +5,8 @@ import { generateRoadmap } from './gemini.js'
 import authRouter from './auth.js'
 import communityRouter from './community.js'
 import meRouter from './me.js'
+import featuresRouter from './features.js'
+import githubRouter from './github.js'
 import { seedIfEmpty } from './db.js'
 
 /* ============================================================================
@@ -26,6 +28,8 @@ seedIfEmpty()
 app.use('/api/auth', authRouter)
 app.use('/api', communityRouter)
 app.use('/api', meRouter)
+app.use('/api', featuresRouter) // suggest-features, boilerplate, review-code, rubber-duck, portfolio-readme
+app.use('/api', githubRouter) // export/github-issues
 
 // Healthcheck (útil para o front saber se o backend/chave estão de pé).
 app.get('/api/health', (_req, res) => {
@@ -39,7 +43,7 @@ app.get('/api/health', (_req, res) => {
 
 // Geração do roadmap a partir dos dados do formulário do dev.
 app.post('/api/roadmap', async (req, res) => {
-  const { project, level, hours, stack } = req.body || {}
+  const { project, level, hours, stack, features } = req.body || {}
 
   if (!project || !String(project).trim()) {
     return res.status(400).json({ error: 'Informe o projeto que deseja construir.' })
@@ -51,6 +55,7 @@ app.post('/api/roadmap', async (req, res) => {
       level: level || 'pleno',
       hours: Number(hours) || 10,
       stack: stack || [],
+      features: Array.isArray(features) ? features : [],
     })
     res.json({ source: 'ai', ...data })
   } catch (err) {

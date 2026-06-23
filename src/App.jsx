@@ -43,6 +43,10 @@ import {
   User,
   ListChecks,
   FolderGit2,
+  FolderTree,
+  FileText,
+  HelpCircle,
+  PartyPopper,
 } from 'lucide-react'
 import { useAuth } from './auth/AuthContext'
 import AuthModal from './auth/AuthModal'
@@ -50,6 +54,12 @@ import Community from './community/Community'
 import Profile from './profile/Profile'
 import MyRoadmaps from './roadmaps/MyRoadmaps'
 import NotificationsBell from './components/NotificationsBell'
+import ScopeSelector from './features/ScopeSelector'
+import ExportGithubModal from './features/ExportGithubModal'
+import BoilerplateModal from './features/BoilerplateModal'
+import SprintValidator from './features/SprintValidator'
+import RubberDuckModal from './features/RubberDuckModal'
+import PortfolioReadmeModal from './features/PortfolioReadmeModal'
 import { api } from './lib/api'
 
 /* ============================================================================
@@ -372,6 +382,7 @@ export default function App() {
     level: 'pleno',
     hours: 10,
     stack: ['React', 'Node.js', 'PostgreSQL'],
+    features: [], // escopo dinâmico (feature 5)
   })
 
   // Roadmap (mutável: marcamos tarefas como concluídas / "commits").
@@ -968,6 +979,14 @@ function SetupForm({ form, setForm, github, setGithub, onGenerate, showToast }) 
             </div>
           </Field>
 
+          {/* Escopo dinâmico (features opcionais sugeridas pela IA) */}
+          <Field
+            label="Escopo do projeto"
+            hint="Deixe a IA sugerir features opcionais — marque o que quer construir e o cronograma se ajusta."
+          >
+            <ScopeSelector form={form} setForm={setForm} showToast={showToast} />
+          </Field>
+
           {/* Conexão GitHub (opcional) */}
           <Field
             label="Conectar GitHub (opcional)"
@@ -1230,6 +1249,23 @@ function Dashboard({
     return { totalTasks, doneTasks, totalEffort, calendarWeeks, percent, finish }
   }, [roadmap, form.hours, baseDate, offsetWeeks])
 
+  // Modal de funcionalidade aberto: 'export' | 'boilerplate' | 'readme' | null.
+  const [featureModal, setFeatureModal] = useState(null)
+
+  // Sprints serializados (usados na exportação e no README).
+  const exportSprints = useMemo(
+    () =>
+      roadmap.map((s) => ({
+        title: s.title,
+        goal: s.goal,
+        checklist: s.checklist || [],
+        tasks: s.tasks.map((t) => t.title),
+      })),
+    [roadmap],
+  )
+
+  const isComplete = stats.percent === 100 && stats.totalTasks > 0
+
   return (
     <div className="animate-fade-in space-y-8">
       {/* Cabeçalho do projeto */}
@@ -1298,17 +1334,52 @@ function Dashboard({
             className="group flex items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2.5 font-mono text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
           >
             <Share2 className="h-4 w-4" />
-            Compartilhar roadmap
+            Compartilhar
+          </button>
+          <button
+            onClick={() => setFeatureModal('boilerplate')}
+            className="flex items-center justify-center gap-2 rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 py-2.5 font-mono text-sm font-semibold text-violet-200 transition hover:bg-violet-500/20"
+          >
+            <FolderTree className="h-4 w-4" />
+            Estrutura inicial
+          </button>
+          <button
+            onClick={() => setFeatureModal('export')}
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-2.5 font-mono text-sm font-semibold text-slate-200 transition hover:border-slate-600"
+          >
+            <Github className="h-4 w-4" />
+            Exportar p/ Issues
           </button>
           <button
             onClick={onRecalculate}
-            className="group flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-4 py-2.5 font-mono text-sm font-semibold text-blue-200 shadow-lg shadow-blue-500/10 transition hover:bg-blue-500/20 hover:shadow-blue-500/30"
+            className="group flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-4 py-2.5 font-mono text-sm font-semibold text-blue-200 transition hover:bg-blue-500/20"
           >
             <RefreshCw className="h-4 w-4 transition-transform duration-500 group-hover:rotate-180" />
-            Recalcular Rota
+            Recalcular
           </button>
         </div>
       </div>
+
+      {/* Banner de conclusão (100%) — gerar README de portfólio */}
+      {isComplete && (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-transparent p-5 animate-fade-in sm:flex-row sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-500/20">
+              <PartyPopper className="h-6 w-6 text-emerald-400" />
+            </span>
+            <div>
+              <p className="font-mono text-sm font-bold text-emerald-300">Projeto 100% concluído! 🎉</p>
+              <p className="text-xs text-slate-400">Gere um README espetacular para colocar no seu portfólio.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setFeatureModal('readme')}
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2.5 font-mono text-sm font-bold text-slate-950 transition hover:from-emerald-400 hover:to-teal-400"
+          >
+            <FileText className="h-4 w-4" /> Gerar README
+          </button>
+        </div>
+      )}
 
       {/* Cards de resumo */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
@@ -1372,6 +1443,8 @@ function Dashboard({
                 window={computeSprintWindow(baseDate, index, offsetWeeks)}
                 onToggleTask={onToggleTask}
                 defaultOpen={index === 0}
+                project={form.project}
+                stack={form.stack}
               />
             ))}
           </div>
@@ -1413,6 +1486,35 @@ function Dashboard({
           <CommitLog commits={commits} github={github} />
         </div>
       </div>
+
+      {/* Modais de funcionalidades */}
+      {featureModal === 'boilerplate' && (
+        <BoilerplateModal
+          project={form.project}
+          stack={form.stack}
+          features={form.features}
+          onClose={() => setFeatureModal(null)}
+          showToast={showToast}
+        />
+      )}
+      {featureModal === 'export' && (
+        <ExportGithubModal
+          project={form.project}
+          sprints={exportSprints}
+          defaultOwner={github?.login}
+          onClose={() => setFeatureModal(null)}
+          showToast={showToast}
+        />
+      )}
+      {featureModal === 'readme' && (
+        <PortfolioReadmeModal
+          project={form.project}
+          stack={form.stack}
+          sprints={exportSprints}
+          onClose={() => setFeatureModal(null)}
+          showToast={showToast}
+        />
+      )}
     </div>
   )
 }
@@ -1500,7 +1602,7 @@ function DependencyAlert({ alert }) {
 /* ==========================================================================
  * CARD DE SPRINT (semana) — expansível, com tarefas "commitáveis".
  * ========================================================================*/
-function SprintCard({ sprint, index, window, onToggleTask, defaultOpen }) {
+function SprintCard({ sprint, index, window, onToggleTask, defaultOpen, project, stack }) {
   const [open, setOpen] = useState(defaultOpen)
 
   const doneCount = sprint.tasks.filter((t) => t.done).length
@@ -1578,6 +1680,8 @@ function SprintCard({ sprint, index, window, onToggleTask, defaultOpen }) {
                 key={task.id}
                 task={task}
                 onToggle={() => onToggleTask(sprint.id, task.id)}
+                project={project}
+                stack={stack}
               />
             ))}
 
@@ -1599,6 +1703,9 @@ function SprintCard({ sprint, index, window, onToggleTask, defaultOpen }) {
               </div>
             )}
 
+            {/* Validador de sprint (micro code review da IA) */}
+            <SprintValidator sprintTitle={sprint.title} stack={stack} />
+
             <div className="flex items-center justify-between px-3 py-2">
               <span className="flex items-center gap-1.5 font-mono text-[11px] text-slate-600">
                 <Zap className="h-3 w-3 text-amber-500" />
@@ -1618,39 +1725,51 @@ function SprintCard({ sprint, index, window, onToggleTask, defaultOpen }) {
   )
 }
 
-/* Linha de tarefa — botão de "commit" (marcar como concluída). */
-function TaskRow({ task, onToggle }) {
+/* Linha de tarefa — botão de "commit" (marcar como concluída) + pato de borracha. */
+function TaskRow({ task, onToggle, project, stack }) {
+  const [duckOpen, setDuckOpen] = useState(false)
   return (
-    <button
-      onClick={onToggle}
-      className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-800/40"
-    >
-      <span className="flex-shrink-0">
-        {task.done ? (
-          <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-        ) : (
-          <Circle className="h-5 w-5 text-slate-600 transition group-hover:text-emerald-500/60" />
-        )}
-      </span>
-      <span
-        className={`flex-1 text-sm transition ${
-          task.done ? 'text-slate-500 line-through' : 'text-slate-200'
-        }`}
-      >
-        {task.title}
-      </span>
-      {/* "Botão" de commit que aparece no hover */}
-      <span
-        className={`flex flex-shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] transition ${
-          task.done
-            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-            : 'border-slate-700 bg-slate-900/60 text-slate-500 opacity-0 group-hover:opacity-100'
-        }`}
-      >
-        <GitCommit className="h-3 w-3" />
-        {task.done ? 'committed' : 'commit'}
-      </span>
-    </button>
+    <>
+      <div className="group flex w-full items-center gap-2 rounded-lg px-3 py-2.5 transition hover:bg-slate-800/40">
+        <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <span className="flex-shrink-0">
+            {task.done ? (
+              <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+            ) : (
+              <Circle className="h-5 w-5 text-slate-600 transition group-hover:text-emerald-500/60" />
+            )}
+          </span>
+          <span className={`text-sm transition ${task.done ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
+            {task.title}
+          </span>
+        </button>
+
+        {/* Pato de borracha: "estou travado" */}
+        <button
+          onClick={() => setDuckOpen(true)}
+          title="Estou travado nesta tarefa"
+          className="flex flex-shrink-0 items-center gap-1 rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1 font-mono text-[10px] text-slate-500 opacity-0 transition hover:border-amber-500/40 hover:text-amber-300 group-hover:opacity-100"
+        >
+          <HelpCircle className="h-3 w-3" /> travou?
+        </button>
+
+        {/* "Commit" (status) */}
+        <span
+          className={`flex flex-shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] transition ${
+            task.done
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+              : 'border-slate-700 bg-slate-900/60 text-slate-500 opacity-0 group-hover:opacity-100'
+          }`}
+        >
+          <GitCommit className="h-3 w-3" />
+          {task.done ? 'committed' : 'commit'}
+        </span>
+      </div>
+
+      {duckOpen && (
+        <RubberDuckModal task={task.title} project={project} stack={stack} onClose={() => setDuckOpen(false)} />
+      )}
+    </>
   )
 }
 

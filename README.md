@@ -28,6 +28,12 @@ DevPath AI recebe um **projeto real** que você quer construir, faz a "engenhari
 | 🔔 | **Notificações** | Avisos quando comentam ou votam no seu post, com badge de não lidas no header. |
 | ✅ | **Checklist (DoD)** | A IA também gera um *Definition of Done* por sprint — critérios objetivos de "pronto". |
 | 📁 | **Meus roadmaps** | Aba na home para **ver, continuar (com progresso salvo) e excluir** todos os seus roadmaps. |
+| 🎚️ | **Escopo dinâmico** | A IA sugere features opcionais (checkboxes); o que você marca entra no roadmap e ajusta as semanas. |
+| 🐙 | **Exportar p/ GitHub Issues** | Cria uma **milestone por sprint** e uma **issue por tarefa** (com Definition of Done) no seu repo. |
+| 🗂️ | **Boilerplate + árvore de pastas** | Gera um script de terminal e a estrutura inicial — copie, baixe `setup.sh` ou um **`.zip`**. |
+| 🛡️ | **Validador de Sprint** | Cole seu código e receba um **code review** técnico da IA (como um sênior no seu PR). |
+| 🦆 | **Pato de Borracha** | Travou numa tarefa? A IA te guia com **perguntas socráticas e pistas** — sem entregar a resposta. |
+| 📄 | **README de portfólio** | Ao chegar a 100%, gera um **README.md** impecável com o que você construiu, pronto pro GitHub. |
 
 ### Dados mockados
 O roadmap de exemplo é baseado em um caso real: construir um **SaaS de Gestão de Tarefas com React e Node** — 8 sprints, do setup do monorepo ao deploy com CI/CD.
@@ -93,6 +99,19 @@ O backend é um **Express** mínimo em `server/`:
 
 - A chamada usa **structured output** (`responseSchema`) → o Gemini responde **JSON válido e previsível** (sprints + dependências), sem precisar "limpar" texto.
 - A `GEMINI_API_KEY` fica **só no servidor** — nunca é exposta ao navegador.
+
+### Mais endpoints de IA (`server/features.js`)
+
+| Rota | O que faz |
+|------|-----------|
+| `POST /api/suggest-features` | Sugere features opcionais (escopo dinâmico). |
+| `POST /api/boilerplate` | Script de terminal + árvore de pastas inicial. |
+| `POST /api/review-code` | Code review de um sprint (verdict + issues). |
+| `POST /api/rubber-duck` | Pistas socráticas para destravar (sem dar a resposta). |
+| `POST /api/portfolio-readme` | Gera o `README.md` de portfólio (markdown). |
+| `POST /api/export/github-issues` | Cria milestones + issues no GitHub (usa um PAT do usuário, **não salvo**). |
+
+> A exportação para GitHub Issues pede um **Personal Access Token** com escopo `repo` (ou fine-grained com permissão de Issues). Ele é usado só na requisição e nunca é persistido.
 - **Variáveis** (`.env`): `GEMINI_API_KEY`, `GEMINI_MODEL` (padrão `gemini-2.5-flash`), `JWT_SECRET`, `PORT` (padrão `3001`).
   - 💡 Use um modelo com cota no free tier (ex.: `gemini-2.5-flash`). O `gemini-2.0-flash` e a série `1.5` podem retornar `429`/`404` em chaves novas.
 - **Sem chave / IA fora do ar?** O front detecta o erro e usa o **roadmap de exemplo** automaticamente, com um aviso. Nada quebra.
@@ -150,10 +169,12 @@ devpath-ai/
 ├── .env.example          # Modelo das variáveis de ambiente (copie p/ .env)
 ├── server/
 │   ├── index.js           # API Express (monta as rotas + health)
-│   ├── gemini.js          # Integração com o Gemini (prompt + schema JSON)
+│   ├── gemini.js          # Gemini: helpers (JSON/texto) + geração do roadmap
+│   ├── features.js        # IA: escopo, boilerplate, code review, pato, README
+│   ├── github.js          # Exportação para GitHub Issues (milestones + issues)
 │   ├── auth.js            # Cadastro/login (bcrypt + JWT) e middlewares
 │   ├── community.js       # Fórum: posts, comentários, votos, notificações
-│   ├── me.js              # Perfil: dashboard, streak, projeto, notificações
+│   ├── me.js              # Perfil: dashboard, streak, roadmaps, notificações
 │   ├── streak.js          # Lógica de ofensiva (streak) e defensiva (escudos)
 │   ├── db.js              # Persistência em JSON + seed da comunidade
 │   └── data/              # db.json (gerado em runtime, fora do git)
@@ -165,7 +186,8 @@ devpath-ai/
 │   ├── community/         # Community.jsx (feed, votos, comentários, share)
 │   ├── profile/           # Profile.jsx (dashboard, ofensiva/defensiva)
 │   ├── roadmaps/          # MyRoadmaps.jsx (lista/continua/exclui roadmaps)
-│   └── components/        # NotificationsBell.jsx (sino do header)
+│   ├── features/          # Escopo, export GitHub, boilerplate, validador, pato, README
+│   └── components/        # Modal.jsx, NotificationsBell.jsx
 ├── public/
 │   └── terminal.svg       # Favicon
 ├── vite.config.js         # Proxy /api -> :3001

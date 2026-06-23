@@ -49,4 +49,12 @@ export const api = {
   createRoadmap: (b) => request('/me/roadmaps', { method: 'POST', body: b }),
   updateRoadmap: (id, b) => request(`/me/roadmaps/${id}`, { method: 'PUT', body: b }),
   deleteRoadmap: (id) => request(`/me/roadmaps/${id}`, { method: 'DELETE' }),
+
+  // Funcionalidades de IA / integrações
+  suggestFeatures: (b) => request('/suggest-features', { method: 'POST', body: b }),
+  boilerplate: (b) => request('/boilerplate', { method: 'POST', body: b }),
+  reviewCode: (b) => request('/review-code', { method: 'POST', body: b }),
+  rubberDuck: (b) => request('/rubber-duck', { method: 'POST', body: b }),
+  portfolioReadme: (b) => request('/portfolio-readme', { method: 'POST', body: b }),
+  exportGithubIssues: (b) => request('/export/github-issues', { method: 'POST', body: b }),
 }
