@@ -59,7 +59,33 @@ financeflow/
 └── supabase/rls-policies.sql  # RLS por usuário + bucket de comprovantes
 ```
 
-**Modo demo vs produção:** o front roda 100% offline (localStorage) para ser avaliado sem chaves. A camada de dados é isolada em `lib/store.tsx` — para produção, troque o reducer por chamadas ao Supabase (schema Prisma e políticas RLS já inclusos), ative o Supabase Auth no lugar do login demo e aponte o assistente para um LLM em uma rota `/api/assistant` (a UI já é assíncrona).
+**Modo demo vs nuvem:** sem variáveis de ambiente o app roda 100% offline (login demo + localStorage). Com `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` configuradas, ele passa automaticamente a usar **Supabase Auth de verdade** (registro com e-mail/senha, confirmação por e-mail, OAuth Google/Microsoft/Apple) e **sincroniza os dados na nuvem** (tabela `user_states` com RLS — cada usuário só acessa os próprios dados, de qualquer dispositivo).
+
+## 🌐 Hospedagem (Supabase + Vercel) — ~10 minutos
+
+### 1) Supabase (banco + autenticação)
+
+1. Crie um projeto grátis em [supabase.com](https://supabase.com) → **New project**.
+2. No painel, abra **SQL Editor** → cole o conteúdo de [`supabase/setup.sql`](supabase/setup.sql) → **Run**.
+3. Em **Project Settings → API**, copie a **Project URL** e a **anon public key**.
+4. (Opcional) Em **Authentication → Sign In / Up**: desative *Confirm email* para permitir login imediato após o cadastro, e habilite os provedores Google/Azure/Apple se quiser login social.
+
+### 2) Vercel (hospedagem)
+
+1. Acesse [vercel.com](https://vercel.com) → **Add New → Project** → importe o repositório `devgustavow/DevPath-IA`.
+2. Em **Root Directory**, selecione **`financeflow`** (importante — o app fica numa subpasta).
+3. Em **Environment Variables**, adicione:
+   - `NEXT_PUBLIC_SUPABASE_URL` = a Project URL do passo 1
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = a anon key do passo 1
+4. **Deploy**. Pronto: `https://seu-projeto.vercel.app`.
+
+### 3) Ajuste final no Supabase
+
+Em **Authentication → URL Configuration**, defina **Site URL** como a URL da Vercel (ex.: `https://seu-projeto.vercel.app`) — é para onde apontam os links de confirmação de e-mail e o retorno do OAuth.
+
+> Para testar localmente com o Supabase: copie `.env.example` para `.env.local`, preencha as duas variáveis e rode `npm run dev`.
+
+**Evolução futura:** para migrar do estado JSONB para tabelas normalizadas, o alvo já está pronto em `prisma/schema.prisma` + `supabase/rls-policies.sql`. O assistente pode ser plugado num LLM via rota `/api/assistant` (a UI já é assíncrona).
 
 ## 🎨 Design
 

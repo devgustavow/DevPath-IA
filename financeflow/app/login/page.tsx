@@ -7,8 +7,9 @@ import { useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Button, Field, Input } from "@/components/ui";
 import { useStore, type Session } from "@/lib/store";
+import { isSupabaseConfigured, supabase, translateAuthError } from "@/lib/supabase";
 
-const SOCIAL: { id: Session["provider"]; label: string; svg: React.ReactNode }[] = [
+const SOCIAL: { id: "google" | "microsoft" | "apple"; label: string; svg: React.ReactNode }[] = [
   {
     id: "google",
     label: "Google",
@@ -44,6 +45,13 @@ const SOCIAL: { id: Session["provider"]; label: string; svg: React.ReactNode }[]
   },
 ];
 
+/** Mapeia o botão social para o provider do Supabase */
+const OAUTH_PROVIDER: Record<string, "google" | "azure" | "apple"> = {
+  google: "google",
+  microsoft: "azure",
+  apple: "apple",
+};
+
 export default function LoginPage() {
   const { session, hydrated, login } = useStore();
   const router = useRouter();
@@ -53,31 +61,76 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
 
   useEffect(() => {
     if (hydrated && session) router.replace("/dashboard");
   }, [hydrated, session, router]);
 
-  function doLogin(provider: Session["provider"], userEmail?: string, userName?: string) {
+  function doDemoLogin(provider: Session["provider"], userEmail?: string, userName?: string) {
     setLoading(true);
-    // Demo: em produção, Supabase Auth (signInWithOAuth / signInWithPassword)
     setTimeout(() => {
       login({
         provider,
         email: userEmail || `voce@${provider}.com`,
-        name: userName || "Gustavo Oliveira",
+        name: userName || "Visitante",
       });
       router.push("/dashboard");
     }, 500);
   }
 
-  function submit(e: React.FormEvent) {
+  async function doSocial(id: "google" | "microsoft" | "apple") {
+    setError("");
+    if (!supabase) return doDemoLogin(id);
+    setLoading(true);
+    const { error: err } = await supabase.auth.signInWithOAuth({
+      provider: OAUTH_PROVIDER[id],
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (err) {
+      setError(translateAuthError(err.message));
+      setLoading(false);
+    }
+    // sucesso: o navegador é redirecionado para o provedor
+  }
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setInfo("");
     if (!email.includes("@")) return setError("Informe um e-mail válido.");
     if (password.length < 6) return setError("A senha precisa de pelo menos 6 caracteres.");
     if (mode === "signup" && name.trim().length < 2) return setError("Informe seu nome.");
-    doLogin("email", email, mode === "signup" ? name : email.split("@")[0]);
+
+    if (!supabase) {
+      return doDemoLogin("email", email, mode === "signup" ? name : email.split("@")[0]);
+    }
+
+    setLoading(true);
+    try {
+      if (mode === "signup") {
+        const { data, error: err } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { name: name.trim() } },
+        });
+        if (err) throw err;
+        if (!data.session) {
+          // Projeto com confirmação de e-mail ativada
+          setInfo("Conta criada! Enviamos um link de confirmação para o seu e-mail. Depois de confirmar, volte aqui e entre.");
+          setMode("login");
+          setLoading(false);
+          return;
+        }
+      } else {
+        const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+        if (err) throw err;
+      }
+      router.push("/dashboard");
+    } catch (err) {
+      setError(translateAuthError(err instanceof Error ? err.message : String(err)));
+      setLoading(false);
+    }
   }
 
   return (
@@ -107,7 +160,7 @@ export default function LoginPage() {
             {SOCIAL.map((s) => (
               <button
                 key={s.id}
-                onClick={() => doLogin(s.id)}
+                onClick={() => doSocial(s.id)}
                 disabled={loading}
                 className="ff-focus flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
               >
@@ -126,16 +179,27 @@ export default function LoginPage() {
           <form onSubmit={submit} className="space-y-3">
             {mode === "signup" && (
               <Field label="Nome">
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome" />
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome" autoComplete="name" />
               </Field>
             )}
             <Field label="E-mail">
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@email.com" />
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@email.com" autoComplete="email" />
             </Field>
             <Field label="Senha">
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              />
             </Field>
             {error && <p className="text-xs text-rose-500">{error}</p>}
+            {info && (
+              <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                {info}
+              </p>
+            )}
             <Button type="submit" className="w-full" loading={loading}>
               {mode === "login" ? "Entrar" : "Criar conta"}
             </Button>
@@ -144,7 +208,7 @@ export default function LoginPage() {
           <p className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
             {mode === "login" ? "Ainda não tem conta?" : "Já tem conta?"}{" "}
             <button
-              onClick={() => setMode(mode === "login" ? "signup" : "login")}
+              onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setInfo(""); }}
               className="font-semibold text-brand-600 hover:underline dark:text-brand-400"
             >
               {mode === "login" ? "Cadastre-se" : "Entrar"}
@@ -153,7 +217,9 @@ export default function LoginPage() {
 
           <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
             <Icon name="ShieldCheck" className="h-3.5 w-3.5" />
-            Demo local — em produção: Supabase Auth com 2FA e criptografia
+            {isSupabaseConfigured
+              ? "Conectado ao Supabase — conta real com dados sincronizados na nuvem"
+              : "Demo local — configure o Supabase para contas reais (veja o README)"}
           </p>
         </div>
       </motion.div>

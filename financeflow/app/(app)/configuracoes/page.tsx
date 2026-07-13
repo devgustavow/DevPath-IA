@@ -31,9 +31,10 @@ const PREMIUM_FEATURES = [
 ];
 
 export default function SettingsPage() {
-  const { state, dispatch, session } = useStore();
+  const { state, dispatch, session, cloud } = useStore();
   const { mode, setMode } = useTheme();
   const [resetOpen, setResetOpen] = useState(false);
+  const [blankOpen, setBlankOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [name, setName] = useState(state.profile.name);
 
@@ -172,7 +173,13 @@ export default function SettingsPage() {
             </div>
             {[
               { icon: "ShieldCheck", title: "Criptografia", desc: "Dados protegidos em repouso e em trânsito (AES-256 + TLS)" },
-              { icon: "Cloud", title: "Backup automático", desc: "Seu estado é salvo automaticamente a cada alteração" },
+              {
+                icon: "Cloud",
+                title: cloud ? "Sincronização na nuvem (Supabase)" : "Backup automático local",
+                desc: cloud
+                  ? "Seus dados são salvos no Supabase com RLS — acesse de qualquer dispositivo"
+                  : "Salvo neste navegador; configure o Supabase para sincronizar na nuvem",
+              },
               { icon: "Check", title: "Sessão segura", desc: `Login via ${session?.provider ?? "e-mail"} · ${session ? new Date(session.loggedAt).toLocaleString("pt-BR") : ""}` },
             ].map((s) => (
               <div key={s.title} className="flex items-start gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
@@ -183,12 +190,15 @@ export default function SettingsPage() {
                 </div>
               </div>
             ))}
-            <div className="flex gap-2 pt-1">
+            <div className="flex flex-wrap gap-2 pt-1">
               <Button variant="outline" size="sm" onClick={exportBackup}>
                 <Icon name="Download" className="h-3.5 w-3.5" /> Exportar backup (JSON)
               </Button>
               <Button variant="outline" size="sm" onClick={() => setResetOpen(true)}>
                 <Icon name="Repeat" className="h-3.5 w-3.5" /> Restaurar dados demo
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setBlankOpen(true)}>
+                <Icon name="Sparkles" className="h-3.5 w-3.5" /> Começar do zero
               </Button>
             </div>
           </div>
@@ -241,6 +251,18 @@ export default function SettingsPage() {
         onConfirm={() => dispatch({ type: "RESET_DEMO" })}
         title="Restaurar dados demo"
         message="Isso substitui TODOS os seus dados atuais pelos dados de demonstração. Deseja continuar?"
+      />
+      <ConfirmDialog
+        open={blankOpen}
+        onClose={() => setBlankOpen(false)}
+        onConfirm={() =>
+          dispatch({
+            type: "RESET_BLANK",
+            profile: { name: session?.name ?? state.profile.name, email: session?.email ?? state.profile.email },
+          })
+        }
+        title="Começar do zero"
+        message="Isso apaga TODAS as transações, contas, cartões e metas, mantendo apenas as categorias padrão e uma carteira vazia. Deseja continuar?"
       />
     </div>
   );

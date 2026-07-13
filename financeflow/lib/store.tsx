@@ -1,7 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useReducer, useState } from "react";
-import { createSeedState } from "./seed";
+import type { User } from "@supabase/supabase-js";
+import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { createBlankState, createSeedState } from "./seed";
+import { supabase } from "./supabase";
 import {
   Account,
   AppState,
@@ -16,14 +18,18 @@ import {
 } from "./types";
 import { uid } from "./utils";
 
-const STORAGE_KEY = "financeflow:state:v1";
 const SESSION_KEY = "financeflow:session:v1";
+
+function storageKey(userId: string | null): string {
+  return `financeflow:state:v1:${userId ?? "demo"}`;
+}
 
 // ─── Ações ───────────────────────────────────────────────────────────────────
 
 type Action =
   | { type: "HYDRATE"; state: AppState }
   | { type: "RESET_DEMO" }
+  | { type: "RESET_BLANK"; profile?: Partial<UserProfile> }
   | { type: "ADD_TRANSACTIONS"; items: Transaction[] }
   | { type: "UPDATE_TRANSACTION"; item: Transaction }
   | { type: "DELETE_TRANSACTION"; id: string }
@@ -60,6 +66,8 @@ function reducer(state: AppState, action: Action): AppState {
       return action.state;
     case "RESET_DEMO":
       return createSeedState();
+    case "RESET_BLANK":
+      return createBlankState({ ...state.profile, ...action.profile });
     case "ADD_TRANSACTIONS":
       return { ...state, transactions: [...state.transactions, ...action.items] };
     case "UPDATE_TRANSACTION":
@@ -123,12 +131,12 @@ function reducer(state: AppState, action: Action): AppState {
   }
 }
 
-// ─── Sessão (demo — em produção: Supabase Auth) ──────────────────────────────
+// ─── Sessão ──────────────────────────────────────────────────────────────────
 
 export interface Session {
   email: string;
   name: string;
-  provider: "email" | "google" | "microsoft" | "apple";
+  provider: "email" | "google" | "microsoft" | "apple" | string;
   loggedAt: string;
 }
 
@@ -137,6 +145,9 @@ interface StoreContextValue {
   dispatch: React.Dispatch<Action>;
   hydrated: boolean;
   session: Session | null;
+  /** true quando conectado ao Supabase (auth real + nuvem) */
+  cloud: boolean;
+  /** login do modo demo — sem efeito quando o Supabase está configurado */
   login: (s: Omit<Session, "loggedAt">) => void;
   logout: () => void;
   newId: (prefix: string) => string;
@@ -144,36 +155,139 @@ interface StoreContextValue {
 
 const StoreContext = createContext<StoreContextValue | null>(null);
 
+function sessionFromUser(user: User): Session {
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const name =
+    (typeof meta.name === "string" && meta.name) ||
+    (typeof meta.full_name === "string" && meta.full_name) ||
+    user.email?.split("@")[0] ||
+    "Você";
+  return {
+    email: user.email ?? "",
+    name,
+    provider: user.app_metadata?.provider ?? "email",
+    loggedAt: user.last_sign_in_at ?? new Date().toISOString(),
+  };
+}
+
+function loadLocal(userId: string | null): AppState | null {
+  try {
+    const raw = localStorage.getItem(storageKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AppState;
+    return parsed && parsed.version === 1 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined as unknown as AppState, () => createSeedState());
   const [hydrated, setHydrated] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastHydratedFor = useRef<string | null | undefined>(undefined);
 
-  // Hidrata do localStorage no cliente
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as AppState;
-        if (parsed && parsed.version === 1) dispatch({ type: "HYDRATE", state: parsed });
+  /** Carrega o estado do usuário: nuvem → localStorage → dados demo */
+  async function hydrateFor(user: User | null): Promise<void> {
+    const id = user?.id ?? null;
+    if (lastHydratedFor.current === id) return;
+    lastHydratedFor.current = id;
+
+    if (supabase && id) {
+      try {
+        const { data, error } = await supabase
+          .from("user_states")
+          .select("state")
+          .eq("user_id", id)
+          .maybeSingle();
+        if (!error && data?.state) {
+          dispatch({ type: "HYDRATE", state: data.state as AppState });
+          return;
+        }
+      } catch {
+        // sem rede/tabela — cai para o local
       }
-      const s = localStorage.getItem(SESSION_KEY);
-      if (s) setSession(JSON.parse(s));
-    } catch {
-      // estado corrompido → mantém seed
+      const local = loadLocal(id);
+      if (local) {
+        dispatch({ type: "HYDRATE", state: local });
+        return;
+      }
+      // Primeiro acesso: começa com os dados demo, com o perfil do usuário
+      const seeded = createSeedState();
+      if (user) {
+        const s = sessionFromUser(user);
+        seeded.profile = { ...seeded.profile, name: s.name, email: s.email };
+      }
+      dispatch({ type: "HYDRATE", state: seeded });
+      return;
     }
-    setHydrated(true);
+
+    // Modo demo
+    const local = loadLocal(null);
+    dispatch({ type: "HYDRATE", state: local ?? createSeedState() });
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      if (supabase) {
+        const { data } = await supabase.auth.getSession();
+        const user = data.session?.user ?? null;
+        if (cancelled) return;
+        setSession(user ? sessionFromUser(user) : null);
+        setUserId(user?.id ?? null);
+        await hydrateFor(user);
+      } else {
+        try {
+          const s = localStorage.getItem(SESSION_KEY);
+          if (s) setSession(JSON.parse(s));
+        } catch {}
+        await hydrateFor(null);
+      }
+      if (!cancelled) setHydrated(true);
+    }
+    init();
+
+    const sub = supabase?.auth.onAuthStateChange((_event, sess) => {
+      const user = sess?.user ?? null;
+      setSession(user ? sessionFromUser(user) : null);
+      setUserId(user?.id ?? null);
+      if (user) {
+        hydrateFor(user).then(() => setHydrated(true));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      sub?.data.subscription.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persiste (backup automático local; em produção: Supabase/PostgreSQL)
+  // Persistência: localStorage sempre + nuvem (debounce) quando logado no Supabase
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(storageKey(userId), JSON.stringify(state));
     } catch {
-      // quota excedida — ignora silenciosamente
+      // quota excedida — ignora
     }
-  }, [state, hydrated]);
+    const client = supabase;
+    if (client && userId) {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        void client
+          .from("user_states")
+          .upsert({ user_id: userId, state, updated_at: new Date().toISOString() })
+          .then(({ error }) => {
+            if (error) console.warn("FinanceFlow: falha ao salvar na nuvem:", error.message);
+          });
+      }, 1500);
+    }
+  }, [state, hydrated, userId]);
 
   const value = useMemo<StoreContextValue>(
     () => ({
@@ -181,7 +295,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       dispatch,
       hydrated,
       session,
+      cloud: Boolean(supabase),
       login: (s) => {
+        if (supabase) return; // com Supabase, o login acontece em app/login via auth
         const full: Session = { ...s, loggedAt: new Date().toISOString() };
         setSession(full);
         try {
@@ -189,7 +305,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       },
       logout: () => {
+        if (supabase) {
+          lastHydratedFor.current = undefined;
+          void supabase.auth.signOut();
+        }
         setSession(null);
+        setUserId(null);
         try {
           localStorage.removeItem(SESSION_KEY);
         } catch {}

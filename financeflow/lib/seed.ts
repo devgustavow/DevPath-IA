@@ -102,6 +102,25 @@ const SEED_PROFILE: UserProfile = {
   twoFactor: false,
 };
 
+/** Estado em branco: categorias padrão + uma carteira, sem movimentações */
+export function createBlankState(profile?: Partial<UserProfile>): AppState {
+  return {
+    version: 1,
+    profile: { ...SEED_PROFILE, ...profile },
+    accounts: [
+      { id: "acc-carteira", name: "Carteira", kind: "carteira", color: "#22C55E", icon: "Wallet", initialBalance: 0 },
+    ],
+    cards: [],
+    categories: SEED_CATEGORIES,
+    transactions: [],
+    recurring: [],
+    goals: [],
+    investments: [],
+    trips: [],
+    widgets: [...DEFAULT_WIDGETS],
+  };
+}
+
 // ─── Gerador de transações ───────────────────────────────────────────────────
 
 interface Gen {
