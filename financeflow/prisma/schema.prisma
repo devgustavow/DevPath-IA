@@ -1,0 +1,204 @@
+// FinanceFlow — Schema Prisma (PostgreSQL / Supabase)
+// O front-end atual roda em modo demo (localStorage); este schema é o alvo
+// de produção, espelhando os tipos de lib/types.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id          String   @id @default(uuid()) @db.Uuid
+  email       String   @unique
+  name        String
+  avatarColor String   @default("#22C55E") @map("avatar_color")
+  currency    String   @default("BRL")
+  language    String   @default("pt-BR")
+  theme       String   @default("system")
+  timezone    String   @default("America/Sao_Paulo")
+  premium     Boolean  @default(false)
+  twoFactor   Boolean  @default(false) @map("two_factor")
+  notifications Json   @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  accounts     Account[]
+  cards        CreditCard[]
+  categories   Category[]
+  transactions Transaction[]
+  recurring    RecurringBill[]
+  goals        Goal[]
+  investments  Investment[]
+  trips        TripBudget[]
+
+  @@map("users")
+}
+
+model Account {
+  id             String  @id @default(uuid()) @db.Uuid
+  userId         String  @map("user_id") @db.Uuid
+  name           String
+  kind           String
+  bank           String?
+  agency         String?
+  number         String?
+  color          String
+  icon           String
+  initialBalance Decimal @default(0) @map("initial_balance") @db.Decimal(14, 2)
+  archived       Boolean @default(false)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[] @relation("AccountTx")
+  transfersIn  Transaction[] @relation("ToAccountTx")
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model CreditCard {
+  id             String  @id @default(uuid()) @db.Uuid
+  userId         String  @map("user_id") @db.Uuid
+  name           String
+  bank           String
+  limit          Decimal @db.Decimal(14, 2)
+  bestPurchaseDay Int    @map("best_purchase_day")
+  closingDay     Int     @map("closing_day")
+  dueDay         Int     @map("due_day")
+  brand          String
+  color          String
+  icon           String
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@map("credit_cards")
+}
+
+model Category {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  name          String
+  icon          String
+  color         String
+  type          String
+  budget        Decimal? @db.Decimal(14, 2)
+  subcategories String[]
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@map("categories")
+}
+
+model Transaction {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  type          String
+  amount        Decimal  @db.Decimal(14, 2)
+  description   String
+  categoryId    String   @map("category_id") @db.Uuid
+  subcategory   String?
+  accountId     String   @map("account_id") @db.Uuid
+  toAccountId   String?  @map("to_account_id") @db.Uuid
+  cardId        String?  @map("card_id") @db.Uuid
+  paymentMethod String   @map("payment_method")
+  date          DateTime @db.Date
+  notes         String?
+  attachmentUrl String?  @map("attachment_url") // Supabase Storage
+  ocrData       Json?    @map("ocr_data")
+  installmentGroupId String? @map("installment_group_id")
+  installmentTotal   Int?    @map("installment_total")
+  installmentCurrent Int?    @map("installment_current")
+  recurringId   String?  @map("recurring_id") @db.Uuid
+  tags          String[]
+  color         String?
+  status        String   @default("efetivada")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  Category      @relation(fields: [categoryId], references: [id])
+  account   Account       @relation("AccountTx", fields: [accountId], references: [id])
+  toAccount Account?      @relation("ToAccountTx", fields: [toAccountId], references: [id])
+  card      CreditCard?   @relation(fields: [cardId], references: [id])
+  recurring RecurringBill? @relation(fields: [recurringId], references: [id])
+
+  @@index([userId, date])
+  @@index([userId, categoryId])
+  @@index([userId, cardId])
+  @@index([installmentGroupId])
+  @@map("transactions")
+}
+
+model RecurringBill {
+  id         String  @id @default(uuid()) @db.Uuid
+  userId     String  @map("user_id") @db.Uuid
+  name       String
+  amount     Decimal @db.Decimal(14, 2)
+  categoryId String  @map("category_id") @db.Uuid
+  accountId  String  @map("account_id") @db.Uuid
+  cardId     String? @map("card_id") @db.Uuid
+  dayOfMonth Int     @map("day_of_month")
+  type       String
+  active     Boolean @default(true)
+  icon       String  @default("Repeat")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@map("recurring_bills")
+}
+
+model Goal {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  name         String
+  icon         String
+  color        String
+  targetAmount Decimal  @map("target_amount") @db.Decimal(14, 2)
+  savedAmount  Decimal  @default(0) @map("saved_amount") @db.Decimal(14, 2)
+  deadline     DateTime @db.Date
+  shared       Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("goals")
+}
+
+model Investment {
+  id           String  @id @default(uuid()) @db.Uuid
+  userId       String  @map("user_id") @db.Uuid
+  name         String
+  type         String
+  invested     Decimal @db.Decimal(14, 2)
+  currentValue Decimal @map("current_value") @db.Decimal(14, 2)
+  dividends    Decimal @default(0) @db.Decimal(14, 2)
+  institution  String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("investments")
+}
+
+model TripBudget {
+  id       String  @id @default(uuid()) @db.Uuid
+  userId   String  @map("user_id") @db.Uuid
+  name     String
+  currency String  @default("BRL")
+  budget   Decimal @db.Decimal(14, 2)
+  spent    Decimal @default(0) @db.Decimal(14, 2)
+  active   Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("trip_budgets")
+}
