@@ -1,4 +1,6 @@
 import express from 'express'
+import { requireAuth } from './auth.js'
+import { quotaGate, consumeQuota } from './plans.js'
 
 /* ============================================================================
  * Exportação do roadmap para GitHub Issues.
@@ -22,7 +24,8 @@ function ghHeaders(token) {
 }
 
 // POST /api/export/github-issues  { token, owner, repo, project, sprints }
-router.post('/export/github-issues', async (req, res) => {
+// Feature premium: exige login e consome a cota "premiumAi" (debitada no sucesso).
+router.post('/export/github-issues', requireAuth, quotaGate('premiumAi'), async (req, res) => {
   const { token, owner, repo, project, sprints } = req.body || {}
   if (!token || !owner || !repo) {
     return res.status(400).json({ error: 'Informe token, owner e repo (ex: owner=usuario, repo=meu-projeto).' })
@@ -113,6 +116,7 @@ router.post('/export/github-issues', async (req, res) => {
       }
     }
 
+    if (issuesCreated > 0) consumeQuota(req.userId, 'premiumAi')
     res.json({
       ok: true,
       issuesCreated,

@@ -1,6 +1,13 @@
 import express from 'express'
 import { SchemaType } from '@google/generative-ai'
 import { runGeminiJSON, runGeminiText } from './gemini.js'
+import { requireAuth } from './auth.js'
+import { quotaGate, consumeQuota } from './plans.js'
+
+// Todas as rotas abaixo são features PREMIUM: exigem login e consomem a cota
+// mensal "premiumAi" do plano (Free tem poucos usos; Pro tem teto alto).
+// A cota só é debitada quando a chamada de IA dá certo.
+const premium = [requireAuth, quotaGate('premiumAi')]
 
 /* ============================================================================
  * Funcionalidades de IA (além do roadmap):
@@ -44,7 +51,7 @@ const featuresSchema = {
   required: ['features'],
 }
 
-router.post('/suggest-features', async (req, res) => {
+router.post('/suggest-features', ...premium, async (req, res) => {
   const { project, stack, level } = req.body || {}
   if (!project) return res.status(400).json({ error: 'Informe o projeto.' })
   try {
@@ -56,6 +63,7 @@ Liste de 6 a 9 FEATURES OPCIONAIS que ele pode incluir ou não no escopo (ex: "L
 extras de trabalho, de 0.5 a 3) e marque "recommended" como true se ela faz parte de um MVP saudável.
 Responda em português do Brasil. Não inclua o que já é óbvio/essencial (auth básica, banco).`
     const data = await runGeminiJSON({ prompt, schema: featuresSchema, temperature: 0.9 })
+    consumeQuota(req.userId, 'premiumAi')
     res.json(data)
   } catch (err) {
     handleErr(res, err)
@@ -84,7 +92,7 @@ const boilerplateSchema = {
   required: ['script', 'tree'],
 }
 
-router.post('/boilerplate', async (req, res) => {
+router.post('/boilerplate', ...premium, async (req, res) => {
   const { project, stack, features } = req.body || {}
   if (!project) return res.status(400).json({ error: 'Informe o projeto.' })
   try {
@@ -100,6 +108,7 @@ router.post('/boilerplate', async (req, res) => {
 - "notes": 1 a 2 frases sobre as decisões de arquitetura.
 Responda em português do Brasil.`
     const data = await runGeminiJSON({ prompt, schema: boilerplateSchema, temperature: 0.6 })
+    consumeQuota(req.userId, 'premiumAi')
     res.json(data)
   } catch (err) {
     handleErr(res, err)
@@ -129,7 +138,7 @@ const reviewSchema = {
   required: ['verdict', 'summary', 'positives', 'issues'],
 }
 
-router.post('/review-code', async (req, res) => {
+router.post('/review-code', ...premium, async (req, res) => {
   const { code, sprintTitle, stack } = req.body || {}
   if (!code || !String(code).trim()) return res.status(400).json({ error: 'Cole o código para revisar.' })
   if (String(code).length > 12000) return res.status(400).json({ error: 'Código muito grande (máx. ~12k caracteres).' })
@@ -145,6 +154,7 @@ CÓDIGO:
 ${code}
 \`\`\``
     const data = await runGeminiJSON({ prompt, schema: reviewSchema, temperature: 0.4 })
+    consumeQuota(req.userId, 'premiumAi')
     res.json(data)
   } catch (err) {
     handleErr(res, err)
@@ -170,7 +180,7 @@ const duckSchema = {
   required: ['questions', 'hints'],
 }
 
-router.post('/rubber-duck', async (req, res) => {
+router.post('/rubber-duck', ...premium, async (req, res) => {
   const { task, project, stack, blocker } = req.body || {}
   if (!task) return res.status(400).json({ error: 'Informe a tarefa.' })
   try {
@@ -183,6 +193,7 @@ REGRA DE OURO: NÃO entregue a solução/código pronto — isso estraga o apren
 - "docs": 1 a 3 links para a DOCUMENTAÇÃO OFICIAL pertinente.
 Responda em português do Brasil, tom encorajador.`
     const data = await runGeminiJSON({ prompt, schema: duckSchema, temperature: 0.7 })
+    consumeQuota(req.userId, 'premiumAi')
     res.json(data)
   } catch (err) {
     handleErr(res, err)
@@ -190,7 +201,7 @@ Responda em português do Brasil, tom encorajador.`
 })
 
 /* ---- 6. README de portfólio --------------------------------------------- */
-router.post('/portfolio-readme', async (req, res) => {
+router.post('/portfolio-readme', ...premium, async (req, res) => {
   const { project, stack, sprints, challenges } = req.body || {}
   if (!project) return res.status(400).json({ error: 'Informe o projeto.' })
   try {
@@ -207,6 +218,7 @@ título + tagline, descrição do projeto, ✨ funcionalidades, 🛠️ tecnolog
 (passo a passo com blocos de código), 🧠 maiores desafios técnicos superados, e 📄 licença.
 Responda SOMENTE com o conteúdo Markdown do README (sem comentários extras, sem cercas \`\`\`markdown ao redor).`
     const markdown = await runGeminiText({ prompt, temperature: 0.75 })
+    consumeQuota(req.userId, 'premiumAi')
     res.json({ markdown })
   } catch (err) {
     handleErr(res, err)

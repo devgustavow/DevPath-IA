@@ -2,6 +2,7 @@ import express from 'express'
 import { readDB, writeDB, uid } from './db.js'
 import { requireAuth, publicUser } from './auth.js'
 import { touchStreak, currentStreak } from './streak.js'
+import { PLANS, planOf, usageView } from './plans.js'
 
 /* ============================================================================
  * Rotas do PERFIL: dashboard, progressão (streak), notificações e a coleção
@@ -89,6 +90,8 @@ router.get('/me/dashboard', requireAuth, (req, res) => {
     streak: currentStreak(user),
     currentProject: myRoadmaps[0] ? roadmapSummary(myRoadmaps[0]) : null,
     roadmapsCount: myRoadmaps.length,
+    plan: planOf(user),
+    usage: usageView(db, user),
     stats: { posts: myPosts.length, comments: myComments.length, karma },
     posts,
   })
@@ -113,6 +116,19 @@ router.get('/me/roadmaps/:id', requireAuth, (req, res) => {
 router.post('/me/roadmaps', requireAuth, (req, res) => {
   const db = readDB()
   if (!db.roadmaps) db.roadmaps = []
+
+  // Limite de roadmaps salvos do plano (Free: poucos; Pro: ilimitado).
+  const owner = db.users.find((u) => u.id === req.userId)
+  const cap = PLANS[planOf(owner)].savedRoadmaps
+  const count = db.roadmaps.filter((r) => r.userId === req.userId).length
+  if (cap != null && count >= cap) {
+    return res.status(402).json({
+      error: `O plano Free salva até ${cap} roadmaps. Faça upgrade para o Pro para salvar ilimitados.`,
+      code: 'UPGRADE_REQUIRED',
+      quota: { kind: 'savedRoadmaps', used: count, limit: cap },
+    })
+  }
+
   const b = req.body || {}
   const now = new Date().toISOString()
   const roadmap = {

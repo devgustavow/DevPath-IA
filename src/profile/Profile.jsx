@@ -17,6 +17,7 @@ import {
   Target,
   Rocket,
   Award,
+  Zap,
 } from 'lucide-react'
 
 /* ============================================================================
@@ -51,7 +52,7 @@ function timeAgo(iso) {
   return `há ${Math.floor(h / 24)}d`
 }
 
-export default function Profile({ user, onGoRoadmap, onOpenRoadmap, onOpenPost, showToast }) {
+export default function Profile({ user, onGoRoadmap, onOpenRoadmap, onOpenPost, onUpgrade, showToast }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -178,6 +179,58 @@ export default function Profile({ user, onGoRoadmap, onOpenRoadmap, onOpenPost, 
           </div>
           <p className="mt-2 font-mono text-[11px] text-slate-500">Protegem sua ofensiva quando você falha um dia.</p>
         </div>
+      </div>
+
+      {/* ---- Plano & uso do mês ---- */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-xs font-bold ${
+              data.plan === 'pro'
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                : 'border-slate-700 bg-slate-950/60 text-slate-300'
+            }`}
+          >
+            <Zap className="h-3.5 w-3.5" />
+            {data.plan === 'pro' ? 'Plano Pro' : 'Plano Free'}
+          </span>
+          {data.plan === 'pro' ? (
+            <span className="font-mono text-[11px] text-slate-400">features de IA sem limites — bom código! ⚡</span>
+          ) : (
+            data.usage && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-slate-400">
+                <span>
+                  roadmaps IA:{' '}
+                  <span className="text-slate-200">
+                    {data.usage.roadmapGen.used}/{data.usage.roadmapGen.limit}
+                  </span>
+                  /mês
+                </span>
+                <span>
+                  features premium:{' '}
+                  <span className="text-slate-200">
+                    {data.usage.premiumAi.used}/{data.usage.premiumAi.limit}
+                  </span>
+                  /mês
+                </span>
+                <span>
+                  salvos:{' '}
+                  <span className="text-slate-200">
+                    {data.usage.savedRoadmaps.used}/{data.usage.savedRoadmaps.limit ?? '∞'}
+                  </span>
+                </span>
+              </div>
+            )
+          )}
+        </div>
+        {data.plan !== 'pro' && (
+          <button
+            onClick={onUpgrade}
+            className="flex flex-shrink-0 items-center gap-1.5 self-start rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 font-mono text-xs font-semibold text-amber-300 transition hover:bg-amber-500/20 sm:self-auto"
+          >
+            <Zap className="h-3.5 w-3.5" /> Fazer upgrade
+          </button>
+        )}
       </div>
 
       {/* ---- Trabalhando em + Últimos posts ---- */}

@@ -19,7 +19,20 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || `Erro ${res.status}`)
+  if (!res.ok) {
+    const err = new Error(data.error || `Erro ${res.status}`)
+    err.code = data.code
+    err.status = res.status
+
+    // Eventos globais: abrem o modal certo sem acoplar cada componente.
+    if (res.status === 402 && data.code === 'UPGRADE_REQUIRED') {
+      window.dispatchEvent(new CustomEvent('devpath:upgrade', { detail: { message: err.message } }))
+    } else if (res.status === 401 && !getToken() && !path.startsWith('/auth')) {
+      // Rota protegida sem estar logado -> abre o modal de login.
+      window.dispatchEvent(new Event('devpath:auth'))
+    }
+    throw err
+  }
   return data
 }
 
@@ -28,6 +41,10 @@ export const api = {
   register: (b) => request('/auth/register', { method: 'POST', body: b, auth: false }),
   login: (b) => request('/auth/login', { method: 'POST', body: b, auth: false }),
   me: () => request('/auth/me'),
+
+  // Roadmap (gerador) + billing
+  generateRoadmap: (b) => request('/roadmap', { method: 'POST', body: b }),
+  billingPlans: () => request('/billing/plans', { auth: false }),
 
   // Comunidade
   listPosts: (sort = 'hot') => request(`/posts?sort=${sort}`),

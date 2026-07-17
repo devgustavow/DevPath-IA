@@ -48,8 +48,19 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  // Recarrega o usuário do backend (ex: para detectar upgrade de plano pós-pagamento).
+  const refresh = async () => {
+    try {
+      const { user } = await api.me()
+      setUser(user)
+      return user
+    } catch {
+      return null
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, ready, login, register, logout }}>
+    <AuthContext.Provider value={{ user, ready, login, register, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   )

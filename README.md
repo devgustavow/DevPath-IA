@@ -112,6 +112,40 @@ O backend é um **Express** mínimo em `server/`:
 | `POST /api/export/github-issues` | Cria milestones + issues no GitHub (usa um PAT do usuário, **não salvo**). |
 
 > A exportação para GitHub Issues pede um **Personal Access Token** com escopo `repo` (ou fine-grained com permissão de Issues). Ele é usado só na requisição e nunca é persistido.
+
+---
+
+## 💰 Monetização (Kiwify)
+
+Modelo **freemium**: plano Free com cotas mensais + plano **Pro** por assinatura via [Kiwify](https://kiwify.com.br).
+
+| Plano | Roadmaps salvos | Gerações de roadmap | Features premium* |
+|-------|-----------------|---------------------|-------------------|
+| **Free** | 2 | 5/mês | 5 usos/mês |
+| **Pro** | ilimitado | 100/mês** | 300/mês** |
+
+\* Features premium: escopo dinâmico, boilerplate, validador de sprint, pato de borracha, README de portfólio e export p/ GitHub Issues (exigem login; a cota só é debitada em chamadas bem-sucedidas).
+\*\* Teto anti-abuso.
+
+### Como ligar
+
+1. Crie o produto (assinatura) na Kiwify e copie o link do checkout → `KIWIFY_CHECKOUT_URL` no `.env`.
+2. Na Kiwify (**Apps → Webhooks**), crie um webhook apontando para `https://SEU-DOMINIO/api/webhooks/kiwify` com os eventos de **compra aprovada, reembolso, chargeback e assinatura cancelada/renovada/atrasada**. Copie o token → `KIWIFY_WEBHOOK_TOKEN` (valida a assinatura HMAC-SHA1 enviada em `?signature=`).
+3. (Opcional) `KIWIFY_PRODUCT_ID` filtra eventos de outros produtos; `KIWIFY_PRICE_LABEL` muda o preço exibido no modal.
+
+### Como funciona a ativação
+
+- O usuário paga no checkout da Kiwify usando o **mesmo e-mail** da conta DevPath → o webhook chega → o plano vira **Pro** automaticamente.
+- Pagou **antes** de criar a conta? O upgrade fica **pendente** e é aplicado no cadastro.
+- Reembolso/chargeback/cancelamento → volta para o Free automaticamente.
+- Quando a cota acaba, a API responde `402 { code: "UPGRADE_REQUIRED" }` e o front abre o modal de upgrade sozinho.
+
+> 💻 **Local**: `localhost` não recebe webhook — exponha com um túnel (ex: ngrok) ou simule com `curl` assinando o corpo com HMAC-SHA1 do token.
+
+| Rota | Método | O que faz |
+|------|--------|-----------|
+| `/api/billing/plans` | `GET` | Config pública: checkout, preço e cotas dos planos. |
+| `/api/webhooks/kiwify` | `POST` | Webhook da Kiwify (ativa/cancela o Pro). |
 - **Variáveis** (`.env`): `GEMINI_API_KEY`, `GEMINI_MODEL` (padrão `gemini-2.5-flash`), `JWT_SECRET`, `PORT` (padrão `3001`).
   - 💡 Use um modelo com cota no free tier (ex.: `gemini-2.5-flash`). O `gemini-2.0-flash` e a série `1.5` podem retornar `429`/`404` em chaves novas.
 - **Sem chave / IA fora do ar?** O front detecta o erro e usa o **roadmap de exemplo** automaticamente, com um aviso. Nada quebra.

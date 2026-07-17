@@ -2,6 +2,7 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { readDB, writeDB, uid, avatarColor } from './db.js'
+import { applyPendingUpgrade } from './billing.js'
 
 /* ============================================================================
  * Autenticação real: cadastro/login com senha "hasheada" (bcryptjs) + JWT.
@@ -20,6 +21,7 @@ export function publicUser(u) {
     username: u.username,
     email: u.email,
     avatarColor: u.avatarColor,
+    plan: u.plan || 'free',
     createdAt: u.createdAt,
   }
 }
@@ -79,9 +81,12 @@ router.post('/register', async (req, res) => {
     email,
     passwordHash: await bcrypt.hash(password, 10),
     avatarColor: avatarColor(username),
+    plan: 'free',
     createdAt: new Date().toISOString(),
   }
   db.users.push(user)
+  // Se este e-mail já comprou o Pro na Kiwify antes de criar a conta, ativa agora.
+  applyPendingUpgrade(db, user)
   writeDB(db)
 
   res.status(201).json({ token: signToken(user), user: publicUser(user) })

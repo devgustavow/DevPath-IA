@@ -2,11 +2,13 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { generateRoadmap } from './gemini.js'
-import authRouter from './auth.js'
+import authRouter, { softUserId } from './auth.js'
 import communityRouter from './community.js'
 import meRouter from './me.js'
 import featuresRouter from './features.js'
 import githubRouter from './github.js'
+import billingRouter from './billing.js'
+import { checkQuota, consumeQuota } from './plans.js'
 import { seedIfEmpty } from './db.js'
 
 /* ============================================================================
@@ -17,7 +19,15 @@ import { seedIfEmpty } from './db.js'
 
 const app = express()
 app.use(cors())
-app.use(express.json())
+// Captura o corpo bruto (req.rawBody) — necessário p/ validar a assinatura
+// HMAC do webhook da Kiwify.
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      req.rawBody = buf.toString('utf8')
+    },
+  }),
+)
 
 const PORT = process.env.PORT || 3001
 
@@ -30,6 +40,7 @@ app.use('/api', communityRouter)
 app.use('/api', meRouter)
 app.use('/api', featuresRouter) // suggest-features, boilerplate, review-code, rubber-duck, portfolio-readme
 app.use('/api', githubRouter) // export/github-issues
+app.use('/api', billingRouter) // billing/plans + webhooks/kiwify
 
 // Healthcheck (útil para o front saber se o backend/chave estão de pé).
 app.get('/api/health', (_req, res) => {
@@ -49,6 +60,21 @@ app.post('/api/roadmap', async (req, res) => {
     return res.status(400).json({ error: 'Informe o projeto que deseja construir.' })
   }
 
+  // Cota mensal de gerações para usuários logados (anônimos não são rastreados).
+  const userId = softUserId(req)
+  if (userId) {
+    const gate = checkQuota(userId, 'roadmapGen')
+    if (!gate.ok) {
+      return res.status(402).json({
+        error: `Você usou suas ${gate.limit} gerações de roadmap do mês no plano ${
+          gate.plan === 'free' ? 'Free' : 'Pro'
+        }. Faça upgrade para continuar.`,
+        code: 'UPGRADE_REQUIRED',
+        quota: { kind: 'roadmapGen', used: gate.used, limit: gate.limit },
+      })
+    }
+  }
+
   try {
     const data = await generateRoadmap({
       project: String(project).trim(),
@@ -57,6 +83,7 @@ app.post('/api/roadmap', async (req, res) => {
       stack: stack || [],
       features: Array.isArray(features) ? features : [],
     })
+    if (userId) consumeQuota(userId, 'roadmapGen') // só cobra a cota em caso de sucesso
     res.json({ source: 'ai', ...data })
   } catch (err) {
     console.error('[POST /api/roadmap] erro:', err.code || '', err.message)
@@ -75,5 +102,10 @@ app.listen(PORT, () => {
   console.log(`\n  🤖 DevPath AI — backend rodando em http://localhost:${PORT}`)
   console.log(`     Modelo:  ${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}`)
   console.log(`     Gemini:  ${keyOk ? 'chave configurada ✓' : '⚠️  SEM CHAVE (defina GEMINI_API_KEY no .env)'}`)
-  console.log(`     Auth:    ${process.env.JWT_SECRET ? 'JWT_SECRET definido ✓' : '⚠️  usando JWT_SECRET padrão (defina um no .env p/ produção)'}\n`)
+  console.log(`     Auth:    ${process.env.JWT_SECRET ? 'JWT_SECRET definido ✓' : '⚠️  usando JWT_SECRET padrão (defina um no .env p/ produção)'}`)
+  console.log(
+    `     Kiwify:  checkout ${process.env.KIWIFY_CHECKOUT_URL ? '✓' : 'não configurado'} · webhook ${
+      process.env.KIWIFY_WEBHOOK_TOKEN ? 'token ✓' : '⚠️  sem token'
+    }\n`,
+  )
 })

@@ -60,6 +60,7 @@ import BoilerplateModal from './features/BoilerplateModal'
 import SprintValidator from './features/SprintValidator'
 import RubberDuckModal from './features/RubberDuckModal'
 import PortfolioReadmeModal from './features/PortfolioReadmeModal'
+import UpgradeModal from './billing/UpgradeModal'
 import { api } from './lib/api'
 
 /* ============================================================================
@@ -359,8 +360,9 @@ export default function App() {
   // Seção principal: roadmap x comunidade (Reddit) x perfil.
   const [section, setSection] = useState('roadmap') // 'roadmap' | 'community' | 'profile'
 
-  // Controle do modal de login/cadastro e do roadmap pendente p/ compartilhar.
+  // Controle dos modais de login/cadastro e upgrade + roadmap pendente p/ compartilhar.
   const [authOpen, setAuthOpen] = useState(false)
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [pendingShare, setPendingShare] = useState(null)
 
   // Post a abrir na comunidade ao navegar a partir do perfil.
@@ -412,6 +414,19 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
+  // Eventos globais disparados pelo cliente HTTP (api.js):
+  // 402 UPGRADE_REQUIRED -> abre o modal de upgrade; 401 sem login -> abre o login.
+  useEffect(() => {
+    const onUpgrade = () => setUpgradeOpen(true)
+    const onAuth = () => setAuthOpen(true)
+    window.addEventListener('devpath:upgrade', onUpgrade)
+    window.addEventListener('devpath:auth', onAuth)
+    return () => {
+      window.removeEventListener('devpath:upgrade', onUpgrade)
+      window.removeEventListener('devpath:auth', onAuth)
+    }
+  }, [])
+
   // Monta o payload completo do roadmap (com progresso) para salvar no backend.
   const buildRoadmapPayload = (sprints, deps, src) => {
     const totalEffort = sprints.reduce((acc, s) => acc + s.effort, 0)
@@ -448,7 +463,12 @@ export default function App() {
         setActiveRoadmapId(r.roadmap.id)
         setRoadmapsReloadKey((k) => k + 1)
       })
-      .catch(() => {})
+      .catch((err) => {
+        // Limite de roadmaps salvos do Free: o modal de upgrade abre via evento.
+        if (err.code === 'UPGRADE_REQUIRED') {
+          showToast('Limite de roadmaps salvos do plano Free — este roadmap não foi salvo.', 'info')
+        }
+      })
   }
 
   // Persiste o progresso (tarefas concluídas) do roadmap ativo.
@@ -493,16 +513,8 @@ export default function App() {
     const minDelay = new Promise((resolve) => setTimeout(resolve, BOOT_DURATION))
 
     try {
-      const res = await fetch('/api/roadmap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
-      if (!res.ok) {
-        const info = await res.json().catch(() => ({}))
-        throw new Error(info.error || `HTTP ${res.status}`)
-      }
-      const data = await res.json()
+      // Via cliente HTTP com token: o backend aplica a cota do plano do usuário.
+      const data = await api.generateRoadmap(form)
       const adapted = adaptRoadmap(data)
       if (!adapted.sprints.length) throw new Error('A IA retornou um roadmap vazio.')
 
@@ -514,6 +526,13 @@ export default function App() {
       showToast('Roadmap gerado pela IA (Gemini) ✓', 'success')
       persistRoadmap(adapted.sprints, adapted.dependencies.length ? adapted.dependencies : DEPENDENCY_ALERTS, 'ai')
     } catch (err) {
+      // Cota do plano esgotada: volta ao formulário (o modal de upgrade já abriu via evento).
+      if (err.code === 'UPGRADE_REQUIRED') {
+        await minDelay
+        setView('setup')
+        showToast(err.message, 'info')
+        return
+      }
       // Fallback gracioso: usa o roadmap de exemplo (mock) e avisa o usuário.
       await minDelay
       const mock = freshRoadmap()
@@ -606,6 +625,7 @@ export default function App() {
         user={user}
         onLogin={openAuth}
         onLogout={logout}
+        onUpgrade={() => setUpgradeOpen(true)}
       />
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-8 sm:px-6">
@@ -628,6 +648,7 @@ export default function App() {
             }}
             onOpenRoadmap={handleLoadRoadmap}
             onOpenPost={handleOpenPost}
+            onUpgrade={() => setUpgradeOpen(true)}
             showToast={showToast}
           />
         ) : (
@@ -701,6 +722,7 @@ export default function App() {
         onClose={() => setAuthOpen(false)}
         onSuccess={(u) => showToast(`Logado como ${u.username} ✓`, 'success')}
       />
+      {upgradeOpen && <UpgradeModal onClose={() => setUpgradeOpen(false)} showToast={showToast} />}
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   )
@@ -709,7 +731,7 @@ export default function App() {
 /* ==========================================================================
  * HEADER (barra superior fixa)
  * ========================================================================*/
-function Header({ section, setSection, showRoadmapControls, onReset, commitCount, user, onLogin, onLogout }) {
+function Header({ section, setSection, showRoadmapControls, onReset, commitCount, user, onLogin, onLogout, onUpgrade }) {
   const tabs = [
     { id: 'roadmap', label: 'Roadmap', icon: Map },
     { id: 'community', label: 'Comunidade', icon: MessageSquare },
@@ -769,6 +791,19 @@ function Header({ section, setSection, showRoadmapControls, onReset, commitCount
 
           {user ? (
             <>
+              {user.plan === 'pro' ? (
+                <span className="hidden items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 font-mono text-[10px] font-bold text-amber-300 sm:flex">
+                  <Zap className="h-3 w-3" /> PRO
+                </span>
+              ) : (
+                <button
+                  onClick={onUpgrade}
+                  title="Fazer upgrade para o Pro"
+                  className="hidden items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 font-mono text-xs font-semibold text-amber-300 transition hover:bg-amber-500/20 sm:flex"
+                >
+                  <Zap className="h-3 w-3" /> Pro
+                </button>
+              )}
               <NotificationsBell />
               <button
                 onClick={() => setSection('profile')}
